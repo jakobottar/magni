@@ -1,0 +1,8 @@
+{
+    "pylint.args": [
+        "--generated-members=numpy.* ,torch.*"
+    ],
+    "black-formatter.args": [
+        "--line-length=120"
+    ]
+}

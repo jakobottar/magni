@@ -47,6 +47,7 @@ def parse_configs():
     parser.add_argument("--multiplier", type=int, default=1, help="batch multiplier for SimCLR")
     parser.add_argument("--name", type=str, default="random", help="run name")
     parser.add_argument("--no-tqdm", action="store_true", help="disable tqdm progress bar")
+    parser.add_argument("--num-classes", type=int, default=14, help="number of classes in dataset")
     parser.add_argument("--resize-size", type=int, default=256, help="resize size for transform")
     parser.add_argument("--root", type=str, default="runs", help="root of folder to save runs in")
     parser.add_argument("-S", "--seed", type=int, default=-1, help="random seed, -1 for random")

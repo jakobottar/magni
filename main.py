@@ -35,9 +35,7 @@ def train_loop(dataloader, model, optimizer):
     num_batches = len(dataloader)
     train_loss = 0
 
-    tbar_loader = tqdm(
-        dataloader, desc="train", dynamic_ncols=True, disable=configs.no_tqdm
-    )
+    tbar_loader = tqdm(dataloader, desc="train", dynamic_ncols=True, disable=configs.no_tqdm)
 
     for images, labels in tbar_loader:
         # move images to GPU if needed
@@ -82,9 +80,7 @@ def val_loop(val_dataloader, model):
     val_loss = 0.0
     with torch.no_grad():
         # validate on in-distribution data
-        tbar_loader = tqdm(
-            val_dataloader, desc="val", dynamic_ncols=True, disable=configs.no_tqdm
-        )
+        tbar_loader = tqdm(val_dataloader, desc="val", dynamic_ncols=True, disable=configs.no_tqdm)
 
         for images, labels in tbar_loader:
             # move images to GPU if needed
@@ -114,7 +110,7 @@ if __name__ == "__main__":
 
     # get datasets
     datasets = get_datasets(configs)
-    NUM_CLASSES = datasets["num_classes"]
+    NUM_CLASSES = configs.num_classes
 
     print(datasets["train"])
     print(datasets["val"])
@@ -141,29 +137,21 @@ if __name__ == "__main__":
     # choose model architecture
     match configs.arch.lower():
         case "resnet18":
-            model = ResNet18(num_classes=datasets["num_classes"])
+            model = ResNet18(num_classes=NUM_CLASSES)
             # model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
         case "resnet50":
-            model = ResNet50(num_classes=datasets["num_classes"])
+            model = ResNet50(num_classes=NUM_CLASSES)
             # model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
         case "convnext":
             model = ConvNeXt()
-            model.load_state_dict(
-                models.ConvNeXt_Small_Weights.IMAGENET1K_V1.get_state_dict()
-            )
+            model.load_state_dict(models.ConvNeXt_Small_Weights.IMAGENET1K_V1.get_state_dict())
             if configs.dataset != "imagenet":
-                model.classifier[2] = nn.Linear(
-                    model.classifier[2].in_features, datasets["num_classes"]
-                )
+                model.classifier[2] = nn.Linear(model.classifier[2].in_features, NUM_CLASSES)
         case "vit":
             model = ViT()
-            model.load_state_dict(
-                models.ViT_L_16_Weights.IMAGENET1K_V1.get_state_dict()
-            )
+            model.load_state_dict(models.ViT_L_16_Weights.IMAGENET1K_V1.get_state_dict())
             if configs.dataset != "imagenet":
-                model.heads.head = nn.Linear(
-                    model.heads.head.in_features, datasets["num_classes"]
-                )
+                model.heads.head = nn.Linear(model.heads.head.in_features, NUM_CLASSES)
 
     # load checkpoint if provided
     if configs.checkpoint is not None:
@@ -234,18 +222,12 @@ if __name__ == "__main__":
 
     # load best model
     if not configs.skip_train:
-        model.load_state_dict(
-            torch.load(
-                os.path.join(configs.root, "best.pth"), map_location=torch.device("cpu")
-            )
-        )
+        model.load_state_dict(torch.load(os.path.join(configs.root, "best.pth"), map_location=torch.device("cpu")))
         model.to(configs.device)
 
     # test best model
     test_stats = val_loop(val_dataloader, model)
-    print(
-        f"test acc: {test_stats['val_acc']*100:.2f}%, test loss: {test_stats['val_loss']:.4f}"
-    )
+    print(f"test acc: {test_stats['val_acc']*100:.2f}%, test loss: {test_stats['val_loss']:.4f}")
 
     mlflow.log_metrics(test_stats, step=configs.epochs)
 
