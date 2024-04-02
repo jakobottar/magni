@@ -1,0 +1,17 @@
+arch: resnet50
+batch-size: 256
+dataset: nfs
+dataset-root: /scratch_nvme/jakobj/nfs/magni/full
+device: cuda
+epochs: 10
+lr: 0.001
+momentum: 0.9
+weight-decay: 1.0e-05
+workers: 4
+
+seed: -1
+
+# configs for transformations
+crop-size: 224
+resize-size: 256
+transforms: ["randomcrop", "randomhorizontalflip", "randomverticalflip", "randomrotation"]
