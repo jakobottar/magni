@@ -1,5 +1,11 @@
+# python files
 __pycache__/
-runs/
 
-*.pth
+# scratch
+runs/
 run.sh
+
+# not to be committed
+*.pth
+*.brml
+*.png
