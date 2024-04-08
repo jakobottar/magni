@@ -9,3 +9,4 @@ run.sh
 *.pth
 *.brml
 *.png
+*.txt 
