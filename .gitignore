@@ -4,9 +4,11 @@ __pycache__/
 # scratch
 runs/
 run.sh
+tmp/
 
 # not to be committed
 *.pth
 *.brml
 *.png
 *.txt 
+data/

@@ -60,18 +60,14 @@ class ImageFolderDataset(torch.utils.data.Dataset):
         try:
             self.df = pd.read_csv(os.path.join(self.dirpath, "metadata.csv"))
         except FileNotFoundError as exc:
-            raise FileNotFoundError(
-                f"Dataset {self.dirpath} does not exist, make sure it has been built."
-            ) from exc
+            raise FileNotFoundError(f"Dataset {self.dirpath} does not exist, make sure it has been built.") from exc
 
     def __len__(self):
         return len(self.df)
 
     def __getitem__(self, key):
         data = self.df.iloc[key].to_dict()
-        data["image"] = Image.open(
-            os.path.join(self.dirpath, data["filename"])
-        ).convert("RGB")
+        data["image"] = Image.open(os.path.join(self.dirpath, data["filename"])).convert("RGB")
 
         if self.transform:
             data["image"] = self.transform(data["image"])
@@ -119,9 +115,7 @@ def get_transforms(configs) -> dict:
             case "randomcrop":
                 temp_transf.append(v2.RandomCrop(configs.crop_size))
             case "randomresizedcrop":
-                temp_transf.append(
-                    v2.RandomResizedCrop(configs.crop_size, antialias=True)
-                )
+                temp_transf.append(v2.RandomResizedCrop(configs.crop_size, antialias=True))
             case "centercrop":
                 temp_transf.append(v2.CenterCrop(configs.crop_size))
             case "randomhorizontalflip":
