@@ -3,27 +3,10 @@ import json
 
 import numpy as np
 import pyxis as px
-import pyxis.torch as pxt
 
 from utils import TransformTorchDataset, process_xrd_data, read_brml, read_txt
 
-# import matplotlib.pyplot as plt
-
-
-# for file in glob.glob("data/*/*"):
-#     print(file)
-#     if file.endswith(".brml"):
-#         data = read_brml(file)
-#     elif file.endswith(".txt") or file.endswith(".csv"):
-#         data = read_txt(file)
-#     data = process_xrd_data(data)
-
-#     print(data.head())
-
-#     print(data['Intensity'].min(), data['Intensity'].max())
-#     print(data['TwoTheta'].min(), data['TwoTheta'].max())
-
-ROUTES = [
+ROUTE = [
     "U3O8ADU",
     "U3O8AUC",
     "U3O8MDU",
@@ -40,13 +23,13 @@ ROUTES = [
     "UO3UO4",
 ]
 
-STARTMAT = [
+FINALMAT = [
     "U3O8",
     "UO2",
     "UO3",
 ]
 
-startmat_map = {
+finalmat_map = {
     "U3O8ADU": "U3O8",
     "U3O8AUC": "U3O8",
     "U3O8MDU": "U3O8",
@@ -85,52 +68,52 @@ def write_samples(list_of_samples, db, label_map):
 
 
 ## make a json with files and their route and starting material
-fullroutes = []
-startingmat = []
-for route in ROUTES:
+routes = []
+finalmat = []
+for route in ROUTE:
     files = glob.glob(f"data/{route}/*")
     for file in files:
-        fullroutes.append({"label": route, "file": file})
-        startingmat.append({"label": startmat_map[route], "file": file})
+        routes.append({"label": route, "file": file})
+        finalmat.append({"label": finalmat_map[route], "file": file})
 
 
 # write json files
-with open("data/fullroutes.json", "w", encoding="utf-8") as f:
-    json.dump(fullroutes, f, indent=4)
+with open("data/routes.json", "w", encoding="utf-8") as f:
+    json.dump(routes, f, indent=4)
 
-with open("data/startingmat.json", "w", encoding="utf-8") as f:
-    json.dump(startingmat, f, indent=4)
+with open("data/finalmat.json", "w", encoding="utf-8") as f:
+    json.dump(finalmat, f, indent=4)
 
 # split into train and val sets
-np.random.shuffle(fullroutes)
-np.random.shuffle(startingmat)
+np.random.shuffle(routes)
+np.random.shuffle(finalmat)
 
-train_fullroutes = fullroutes[: int(0.8 * len(fullroutes))]
-val_fullroutes = fullroutes[int(0.8 * len(fullroutes) + 1) :]
+train_routes = routes[: int(0.8 * len(routes))]
+val_routes = routes[int(0.8 * len(routes) + 1) :]
 
-train_startingmat = startingmat[: int(0.8 * len(startingmat))]
-val_startingmat = startingmat[int(0.8 * len(startingmat) + 1) :]
+train_finalmat = finalmat[: int(0.8 * len(finalmat))]
+val_finalmat = finalmat[int(0.8 * len(finalmat) + 1) :]
 
-# make fullroutes lmdb
-with px.Writer(dirpath="./data/fullroutes/train", map_size_limit=10000) as db:
-    write_samples(train_fullroutes, db, ROUTES)
+# make routes lmdb
+with px.Writer(dirpath="./data/routes/train", map_size_limit=10000) as db:
+    write_samples(train_routes, db, ROUTE)
 
-with px.Writer(dirpath="./data/fullroutes/val", map_size_limit=10000) as db:
-    write_samples(val_fullroutes, db, ROUTES)
+with px.Writer(dirpath="./data/routes/val", map_size_limit=10000) as db:
+    write_samples(val_routes, db, ROUTE)
 
-# make startingmat lmdb
-with px.Writer(dirpath="./data/startingmat/train", map_size_limit=10000) as db:
-    write_samples(train_startingmat, db, STARTMAT)
+# make finalmat lmdb
+with px.Writer(dirpath="./data/finalmat/train", map_size_limit=10000) as db:
+    write_samples(train_finalmat, db, FINALMAT)
 
-with px.Writer(dirpath="./data/startingmat/val", map_size_limit=10000) as db:
-    write_samples(val_startingmat, db, STARTMAT)
+with px.Writer(dirpath="./data/finalmat/val", map_size_limit=10000) as db:
+    write_samples(val_finalmat, db, FINALMAT)
 
-routes_dataset = TransformTorchDataset("data/fullroutes/train")
-routes_dataset_val = TransformTorchDataset("data/fullroutes/val")
-startingmat_dataset = TransformTorchDataset("data/startingmat/train")
-startingmat_dataset_val = TransformTorchDataset("data/startingmat/val")
+routes_dataset = TransformTorchDataset("data/routes/train")
+routes_dataset_val = TransformTorchDataset("data/routes/val")
+finalmat_dataset = TransformTorchDataset("data/finalmat/train")
+finalmat_dataset_val = TransformTorchDataset("data/finalmat/val")
 
 print(routes_dataset)
 print(routes_dataset_val)
-print(startingmat_dataset)
-print(startingmat_dataset_val)
+print(finalmat_dataset)
+print(finalmat_dataset_val)
