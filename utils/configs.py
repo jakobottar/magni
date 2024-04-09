@@ -60,6 +60,8 @@ def parse_configs():
     )
     parser.add_argument("--weight-decay", type=float, default=1e-9, help="optimizer weight decay")
     parser.add_argument("--workers", type=int, default=2, help="dataloader worker threads")
+    parser.add_argument("--xrd-checkpoint", type=str, default=None, help="checkpoint file for XRD model")
+    parser.add_argument("--xrd-root", type=str, default="./data/", help="XRD dataset location")
 
     configs, _ = parser.parse_known_args()
 

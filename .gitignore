@@ -12,3 +12,6 @@ tmp/
 *.png
 *.txt 
 data/
+
+# vscode files
+.vscode

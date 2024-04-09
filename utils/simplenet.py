@@ -18,5 +18,5 @@ class SimpleMLP(nn.Module):
     def forward(self, x, return_feature=False):
         t = self.fcblock(x)
         if return_feature:
-            return t, self.out(t)
+            return self.out(t), t
         return self.out(t)

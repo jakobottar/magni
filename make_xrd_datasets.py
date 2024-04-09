@@ -132,3 +132,13 @@ for _, label in finalmat_dataset_val:
     counter[int(label)] += 1
 
 print(f"val -- U3O8: {counter[0]}, UO2: {counter[1]}, UO3: {counter[2]}")
+
+### make xrd datasets for demo setup
+### make a seperate dataset for each final material
+
+for mat in FINALMAT:
+    mat_files = [file for file in finalmat if file["label"] == mat]
+
+    # make finalmat lmdb
+    with px.Writer(dirpath=f"./data/demo-mat/{mat}", map_size_limit=10000) as db:
+        write_samples(mat_files, db, FINALMAT)
