@@ -5,7 +5,7 @@ import numpy as np
 import pyxis as px
 import pyxis.torch as pxt
 
-from utils import process_xrd_data, read_brml, read_txt
+from utils import TransformTorchDataset, process_xrd_data, read_brml, read_txt
 
 # import matplotlib.pyplot as plt
 
@@ -94,13 +94,15 @@ with px.Writer(dirpath="./data/fullroutes", map_size_limit=10000) as db:
         data = process_xrd_data(data)
 
         print(data.head())
+        # drop "twotheta" column
+        data = data.drop(columns=["TwoTheta"])
 
         label = np.array([ROUTES.index(sample["label"])])
-        data = data.to_numpy()[..., np.newaxis].transpose(2, 0, 1)
+        data = data.to_numpy().transpose(1, 0).astype(np.float32)
 
         print(data.shape, label.shape)
 
-        db.put_samples("label", label, "data", data)
+        db.put_samples({"data": data, "label": label})
 
 # make startingmat lmdb
 with px.Writer(dirpath="./data/startingmat", map_size_limit=10000) as db:
@@ -115,14 +117,16 @@ with px.Writer(dirpath="./data/startingmat", map_size_limit=10000) as db:
         data = process_xrd_data(data)
 
         print(data.head())
+        # drop "twotheta" column
+        data = data.drop(columns=["TwoTheta"])
 
         label = np.array([STARTMAT.index(sample["label"])])
-        data = data.to_numpy()[..., np.newaxis].transpose(2, 0, 1)
+        data = data.to_numpy().transpose(1, 0).astype(np.float32)
 
-        db.put_samples("label", label, "data", data)
+        db.put_samples({"data": data, "label": label})
 
-routes_dataset = pxt.TorchDataset("data/fullroutes")
-startingmat_dataset = pxt.TorchDataset("data/startingmat")
+routes_dataset = TransformTorchDataset("data/fullroutes")
+startingmat_dataset = TransformTorchDataset("data/startingmat")
 
 print(routes_dataset)
 print(startingmat_dataset)

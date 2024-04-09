@@ -5,6 +5,7 @@ dataset and dataloader generation
 import os
 
 import pandas as pd
+import pyxis.torch as pxt
 import torch
 from PIL import Image
 from torchvision import datasets
@@ -39,6 +40,36 @@ ROUTES = [
     "UO3MDU",
     "UO3SDU",
 ]
+
+
+class TransformTorchDataset(pxt.TorchDataset):
+    """
+    reimplements pyxis's TorchDataset for LMDBs
+    but allows for custom image transformation
+    with `transform` arg
+    """
+
+    def __init__(self, dirpath, transform=None):
+        super().__init__(dirpath)
+        self.transform = transform
+
+    def __getitem__(self, key):
+        data = self.db[key]
+        for k in data.keys():
+            data[k] = torch.from_numpy(data[k])
+
+        return tuple(data.values())
+
+    def __repr__(self):
+        if self.transform is None:
+            return str(self.db)
+        else:
+            format_string = "Transforms: "
+            for t in self.transform.transforms:
+                format_string += "\n"
+                format_string += f"        {t}"
+            format_string += "\n"
+            return str(self.db) + "\n" + format_string
 
 
 class ImageFolderDataset(torch.utils.data.Dataset):

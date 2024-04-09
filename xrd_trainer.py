@@ -1,6 +1,6 @@
 # pylint: disable=used-before-assignment, redefined-outer-name
 """
-baseline method
+classification model on xrd data
 
 jakob johnson, 4/02/2024
 """
@@ -8,15 +8,15 @@ import os
 
 import mlflow
 import numpy as np
+import pyxis.torch as pxt
 import torch
 import torch.nn.functional as F
 from torch import nn
 from torch.utils.data import DataLoader
 from torchmetrics.classification import MulticlassAccuracy
-from torchvision import models
 from tqdm import tqdm
 
-from utils import ConvNeXt, ResNet18, ResNet50, ViT, get_datasets, parse_configs
+from utils import TransformTorchDataset, parse_configs
 
 
 def cosine_annealing(step, total_steps, lr_max, lr_min):
@@ -37,10 +37,11 @@ def train_loop(dataloader, model, optimizer):
 
     tbar_loader = tqdm(dataloader, desc="train", dynamic_ncols=True, disable=configs.no_tqdm)
 
-    for images, labels in tbar_loader:
+    for data, labels in tbar_loader:
         # move images to GPU if needed
-        images, labels = (
-            images.to(configs.device),
+
+        data, labels = (
+            data.to(configs.device),
             labels.to(configs.device),
         )
 
@@ -48,7 +49,7 @@ def train_loop(dataloader, model, optimizer):
         optimizer.zero_grad()
 
         # compute prediction and loss
-        logits = model(images)
+        logits = model(data)
         loss = loss_fn(logits, labels)
         train_loss += loss.item()
 
@@ -82,12 +83,12 @@ def val_loop(val_dataloader, model):
         # validate on in-distribution data
         tbar_loader = tqdm(val_dataloader, desc="val", dynamic_ncols=True, disable=configs.no_tqdm)
 
-        for images, labels in tbar_loader:
+        for data, labels in tbar_loader:
             # move images to GPU if needed
-            images, labels = (images.to(configs.device), labels.to(configs.device))
+            data, labels = (data.to(configs.device), labels.to(configs.device))
 
             # compute prediction and loss
-            logits = model(images)
+            logits = model(data)
             val_loss += loss_fn(logits, labels).item()
             preds = torch.argmax(F.softmax(logits, dim=1), dim=1)
 
@@ -109,21 +110,22 @@ if __name__ == "__main__":
     ####################
 
     # get datasets
-    datasets = get_datasets(configs)
-    NUM_CLASSES = configs.num_classes
+    train_dataset = TransformTorchDataset("data/startingmat")
+    val_dataset = TransformTorchDataset("data/startingmat")
 
-    print(datasets["train"])
-    print(datasets["val"])
+    NUM_CLASSES = 3
+
+    print(train_dataset)
 
     # set up dataloaders
     train_dataloader = DataLoader(
-        datasets["train"],
+        train_dataset,
         batch_size=configs.batch_size,
         shuffle=True,
         num_workers=configs.workers,
     )
     val_dataloader = DataLoader(
-        datasets["val"],
+        val_dataset,
         batch_size=configs.batch_size,
         shuffle=False,
         num_workers=configs.workers,
@@ -136,22 +138,18 @@ if __name__ == "__main__":
 
     # choose model architecture
     match configs.arch.lower():
-        case "resnet18":
-            model = ResNet18(num_classes=NUM_CLASSES)
-            # model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
-        case "resnet50":
-            model = ResNet50(num_classes=NUM_CLASSES)
-            # model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
-        case "convnext":
-            model = ConvNeXt()
-            model.load_state_dict(models.ConvNeXt_Small_Weights.IMAGENET1K_V1.get_state_dict())
-            if configs.dataset != "imagenet":
-                model.classifier[2] = nn.Linear(model.classifier[2].in_features, NUM_CLASSES)
-        case "vit":
-            model = ViT()
-            model.load_state_dict(models.ViT_L_16_Weights.IMAGENET1K_V1.get_state_dict())
-            if configs.dataset != "imagenet":
-                model.heads.head = nn.Linear(model.heads.head.in_features, NUM_CLASSES)
+        case "simplemlp":
+            model = nn.Sequential(
+                nn.Linear(4096, 2048),
+                nn.ReLU(),
+                nn.Linear(2048, 1024),
+                nn.ReLU(),
+                nn.Linear(1024, NUM_CLASSES),
+            )
+
+        case "simplecnn":
+            raise NotImplementedError
+            # model = nn.Sequential(
 
     # load checkpoint if provided
     if configs.checkpoint is not None:
@@ -160,7 +158,6 @@ if __name__ == "__main__":
     model.to(configs.device)
 
     # initialize optimizer and scheduler
-
     optimizer = torch.optim.Adam(
         model.parameters(),
         lr=configs.lr,

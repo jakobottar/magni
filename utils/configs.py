@@ -20,7 +20,7 @@ def parse_configs():
         type=str,
         default="resnet18",
         help="model architecture",
-        choices=["resnet18", "resnet50", "convnext", "vit"],
+        choices=["resnet18", "resnet50", "convnext", "vit", "simplemlp", "simplecnn"],
     )
     parser.add_argument("--batch-size", type=int, default=8, help="batch size")
     parser.add_argument(
