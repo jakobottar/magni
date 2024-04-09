@@ -110,8 +110,8 @@ if __name__ == "__main__":
     ####################
 
     # get datasets
-    train_dataset = TransformTorchDataset("data/startingmat")
-    val_dataset = TransformTorchDataset("data/startingmat")
+    train_dataset = TransformTorchDataset("data/startingmat/train")
+    val_dataset = TransformTorchDataset("data/startingmat/val")
 
     NUM_CLASSES = 3
 

@@ -64,6 +64,26 @@ startmat_map = {
 }
 
 
+def write_samples(list_of_samples, db, label_map):
+    for sample in list_of_samples:
+        file = sample["file"]
+
+        if file.endswith(".brml"):
+            data = read_brml(file)
+        elif file.endswith(".txt") or file.endswith(".csv"):
+            data = read_txt(file)
+        data = process_xrd_data(data)
+
+        print(data.head())
+        # drop "twotheta" column
+        data = data.drop(columns=["TwoTheta"])
+
+        label = np.array([label_map.index(sample["label"])])
+        data = data.to_numpy().transpose(1, 0).astype(np.float32)
+
+        db.put_samples({"data": data, "label": label})
+
+
 ## make a json with files and their route and starting material
 fullroutes = []
 startingmat = []
@@ -81,52 +101,36 @@ with open("data/fullroutes.json", "w", encoding="utf-8") as f:
 with open("data/startingmat.json", "w", encoding="utf-8") as f:
     json.dump(startingmat, f, indent=4)
 
+# split into train and val sets
+np.random.shuffle(fullroutes)
+np.random.shuffle(startingmat)
+
+train_fullroutes = fullroutes[: int(0.8 * len(fullroutes))]
+val_fullroutes = fullroutes[int(0.8 * len(fullroutes) + 1) :]
+
+train_startingmat = startingmat[: int(0.8 * len(startingmat))]
+val_startingmat = startingmat[int(0.8 * len(startingmat) + 1) :]
+
 # make fullroutes lmdb
-with px.Writer(dirpath="./data/fullroutes", map_size_limit=10000) as db:
-    for i, sample in enumerate(fullroutes):
-        file = sample["file"]
+with px.Writer(dirpath="./data/fullroutes/train", map_size_limit=10000) as db:
+    write_samples(train_fullroutes, db, ROUTES)
 
-        print(file)
-        if file.endswith(".brml"):
-            data = read_brml(file)
-        elif file.endswith(".txt") or file.endswith(".csv"):
-            data = read_txt(file)
-        data = process_xrd_data(data)
-
-        print(data.head())
-        # drop "twotheta" column
-        data = data.drop(columns=["TwoTheta"])
-
-        label = np.array([ROUTES.index(sample["label"])])
-        data = data.to_numpy().transpose(1, 0).astype(np.float32)
-
-        print(data.shape, label.shape)
-
-        db.put_samples({"data": data, "label": label})
+with px.Writer(dirpath="./data/fullroutes/val", map_size_limit=10000) as db:
+    write_samples(val_fullroutes, db, ROUTES)
 
 # make startingmat lmdb
-with px.Writer(dirpath="./data/startingmat", map_size_limit=10000) as db:
-    for i, sample in enumerate(startingmat):
-        file = sample["file"]
+with px.Writer(dirpath="./data/startingmat/train", map_size_limit=10000) as db:
+    write_samples(train_startingmat, db, STARTMAT)
 
-        print(file)
-        if file.endswith(".brml"):
-            data = read_brml(file)
-        elif file.endswith(".txt") or file.endswith(".csv"):
-            data = read_txt(file)
-        data = process_xrd_data(data)
+with px.Writer(dirpath="./data/startingmat/val", map_size_limit=10000) as db:
+    write_samples(val_startingmat, db, STARTMAT)
 
-        print(data.head())
-        # drop "twotheta" column
-        data = data.drop(columns=["TwoTheta"])
-
-        label = np.array([STARTMAT.index(sample["label"])])
-        data = data.to_numpy().transpose(1, 0).astype(np.float32)
-
-        db.put_samples({"data": data, "label": label})
-
-routes_dataset = TransformTorchDataset("data/fullroutes")
-startingmat_dataset = TransformTorchDataset("data/startingmat")
+routes_dataset = TransformTorchDataset("data/fullroutes/train")
+routes_dataset_val = TransformTorchDataset("data/fullroutes/val")
+startingmat_dataset = TransformTorchDataset("data/startingmat/train")
+startingmat_dataset_val = TransformTorchDataset("data/startingmat/val")
 
 print(routes_dataset)
+print(routes_dataset_val)
 print(startingmat_dataset)
+print(startingmat_dataset_val)
