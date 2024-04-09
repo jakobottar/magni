@@ -16,7 +16,7 @@ from torch.utils.data import DataLoader
 from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
 
-from utils import TransformTorchDataset, parse_configs
+from utils import get_datasets, parse_configs
 
 
 def cosine_annealing(step, total_steps, lr_max, lr_min):
@@ -110,22 +110,21 @@ if __name__ == "__main__":
     ####################
 
     # get datasets
-    train_dataset = TransformTorchDataset("data/finalmat/train")
-    val_dataset = TransformTorchDataset("data/finalmat/val")
+    datasets = get_datasets(configs)
+    NUM_CLASSES = datasets["num_classes"]
 
-    NUM_CLASSES = 3
-
-    print(train_dataset)
+    print(datasets["train"])
+    print(datasets["val"])
 
     # set up dataloaders
     train_dataloader = DataLoader(
-        train_dataset,
+        datasets["train"],
         batch_size=configs.batch_size,
         shuffle=True,
         num_workers=configs.workers,
     )
     val_dataloader = DataLoader(
-        val_dataset,
+        datasets["val"],
         batch_size=configs.batch_size,
         shuffle=False,
         num_workers=configs.workers,

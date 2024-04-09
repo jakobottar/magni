@@ -52,7 +52,7 @@ def parse_configs():
     parser.add_argument("--root", type=str, default="runs", help="root of folder to save runs in")
     parser.add_argument("-S", "--seed", type=int, default=-1, help="random seed, -1 for random")
     parser.add_argument("--skip-train", action="store_true", help="skip training")
-    parser.add_argument("--transforms", type=str, default=None, nargs="+")
+    parser.add_argument("--transforms", type=str, default="randomcrop", nargs="+")
     parser.add_argument(
         "--use-train-transf-for-val",
         action="store_true",

@@ -17,6 +17,7 @@ norm_dict = {
     "cifar10": {"mean": [0.4914, 0.4822, 0.4465], "std": [0.2470, 0.2435, 0.2616]},
     "cifar100": {"mean": [0.5071, 0.4867, 0.4408], "std": [0.2675, 0.2565, 0.2761]},
     "nfs": {"mean": [0.3843, 0.3843, 0.3843], "std": [0.1692, 0.1692, 0.1692]},
+    "xrd": {"mean": [0], "std": [0]},
     "imagenet": {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
     "imagenet-o": {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
     "openimage-o": {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
@@ -57,6 +58,9 @@ class TransformTorchDataset(pxt.TorchDataset):
         data = self.db[key]
         for k in data.keys():
             data[k] = torch.from_numpy(data[k])
+
+        if self.transform:
+            data["data"] = self.transform(data["data"].to(torch.float))
 
         return tuple(data.values())
 
@@ -107,6 +111,15 @@ class ImageFolderDataset(torch.utils.data.Dataset):
 
     def __repr__(self):
         return "ImageFolderDataset"
+
+
+class RandomNoiseTransform:
+    def __init__(self, noise_level=0.1):
+        self.noise_level = noise_level
+
+    def __call__(self, data):
+        noise = torch.randn_like(data) * self.noise_level
+        return data + noise
 
 
 class Convert:
@@ -182,95 +195,6 @@ def get_transforms(configs) -> dict:
     return transforms
 
 
-# def get_ood_datasets(configs) -> dict:
-#     """
-#     load OOD datasets
-#     """
-
-#     ood_datasets = {
-#         "ood": None,
-#     }
-
-#     transform = get_transforms(configs)["val"]
-
-#     match configs.ood_dataset.lower():
-#         case "nfs":
-
-#             # list ood classes
-#             ood_classes = [e for e in ROUTES if e not in configs.ood_classes]
-
-#             if configs.use_fake_multiview:
-#                 ood_datasets["ood"] = FakeMultiMagImageDataset(
-#                     root=configs.dataset_root,
-#                     split="train_nova",
-#                     transform=transform,
-#                     fold=configs.fold_num,
-#                     drop_classes=ood_classes,
-#                 )
-#             elif configs.multimag:
-#                 ood_datasets["ood"] = MultiMagImageDataset(
-#                     root=configs.ood_dataset_root,
-#                     split="train_nova",
-#                     transform=transform,
-#                     drop_classes=ood_classes,
-#                     fold=configs.fold_num,
-#                     get_all_views=configs.allmag,
-#                 )
-#             else:
-#                 ood_datasets["ood"] = NFSImageDataset(
-#                     root=configs.ood_dataset_root,
-#                     split="train_nova",
-#                     transform=transform,
-#                     fold=configs.fold_num,
-#                     drop_classes=ood_classes,
-#                 )
-
-#         case "teneo":
-#             ood_datasets["ood"] = TransformTorchDataset(
-#                 dirpath=os.path.join(configs.dataset_root, "teneo"),
-#                 transform=transform,
-#                 fake_multiview=configs.use_fake_multiview,
-#             )
-
-#         case "mount":
-#             ood_datasets["ood"] = TransformTorchDataset(
-#                 dirpath=os.path.join(configs.dataset_root, "mount"),
-#                 transform=transform,
-#                 fake_multiview=configs.use_fake_multiview,
-#             )
-
-#         case "impurities":
-#             ood_datasets["ood"] = TransformTorchDataset(
-#                 dirpath=os.path.join(configs.dataset_root, "high-impurity"),
-#                 transform=transform,
-#                 fake_multiview=configs.use_fake_multiview,
-#             )
-
-#         case "cifar100":
-#             ood_datasets["ood"] = datasets.CIFAR100(
-#                 root=configs.ood_dataset_root, train=False, download=True, transform=transform
-#             )
-
-#         case "svhn":
-#             ood_datasets["ood"] = SVHNDataset(
-#                 root=configs.ood_dataset_root,
-#                 split="test",
-#                 download=True,
-#                 transform=transform,
-#                 fake_multiview=configs.use_fake_multiview,
-#             )
-
-#         case "imagenet-o" | "openimage-o":
-#             ood_datasets["ood"] = FileListDataset(
-#                 root=configs.ood_dataset_root, transform=transform, fake_multiview=configs.use_fake_multiview
-#             )
-
-#         case _:
-#             raise ValueError(f"OOD dataset {configs.ood_dataset} not supported")
-
-#     return ood_datasets
-
-
 def get_datasets(configs) -> dict:
     """
     load datasets
@@ -298,6 +222,18 @@ def get_datasets(configs) -> dict:
                 split="val",
                 root_dir=configs.dataset_root,
                 transform=transforms["val"],
+            )
+
+        case "xrd":
+            id_datasets["num_classes"] = 3
+
+            id_datasets["train"] = TransformTorchDataset(
+                dirpath=os.path.join(configs.dataset_root, "finalmat", "train"),
+                transform=v2.Compose([RandomNoiseTransform(noise_level=0.002)]),
+            )
+            id_datasets["val"] = TransformTorchDataset(
+                dirpath=os.path.join(configs.dataset_root, "finalmat", "val"),
+                # transform=v2.Compose([RandomNoiseTransform(noise_level=0.1)]),
             )
 
         case "cifar10":

@@ -119,10 +119,13 @@ print(finalmat_dataset)
 print(finalmat_dataset_val)
 
 counter = [0, 0, 0]
-for _, label in finalmat_dataset:
+mean = 0
+for data, label in finalmat_dataset:
     counter[int(label)] += 1
+    mean += data.mean()
 
 print(f"train -- U3O8: {counter[0]}, UO2: {counter[1]}, UO3: {counter[2]}")
+print(f"mean: {mean / len(finalmat_dataset)}")
 
 counter = [0, 0, 0]
 for _, label in finalmat_dataset_val:
