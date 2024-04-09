@@ -16,7 +16,7 @@ from torch.utils.data import DataLoader
 from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
 
-from utils import get_datasets, parse_configs
+from utils import SimpleMLP, get_datasets, parse_configs
 
 
 def cosine_annealing(step, total_steps, lr_max, lr_min):
@@ -138,13 +138,7 @@ if __name__ == "__main__":
     # choose model architecture
     match configs.arch.lower():
         case "simplemlp":
-            model = nn.Sequential(
-                nn.Linear(4096, 2048),
-                nn.ReLU(),
-                nn.Linear(2048, 1024),
-                nn.ReLU(),
-                nn.Linear(1024, NUM_CLASSES),
-            )
+            model = SimpleMLP(input_dim=4096, num_classes=NUM_CLASSES)
 
         case "simplecnn":
             raise NotImplementedError
