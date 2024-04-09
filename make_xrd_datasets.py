@@ -117,3 +117,15 @@ print(routes_dataset)
 print(routes_dataset_val)
 print(finalmat_dataset)
 print(finalmat_dataset_val)
+
+counter = [0, 0, 0]
+for _, label in finalmat_dataset:
+    counter[int(label)] += 1
+
+print(f"train -- U3O8: {counter[0]}, UO2: {counter[1]}, UO3: {counter[2]}")
+
+counter = [0, 0, 0]
+for _, label in finalmat_dataset_val:
+    counter[int(label)] += 1
+
+print(f"val -- U3O8: {counter[0]}, UO2: {counter[1]}, UO3: {counter[2]}")
