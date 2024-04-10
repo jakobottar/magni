@@ -1,5 +1,17 @@
+# python files
 __pycache__/
-runs/
 
-*.pth
+# scratch
+runs/
 run.sh
+tmp/
+
+# not to be committed
+*.pth
+*.brml
+*.png
+*.txt 
+data/
+
+# vscode files
+.vscode

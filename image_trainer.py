@@ -1,11 +1,10 @@
 # pylint: disable=used-before-assignment, redefined-outer-name
 """
-combination multimodal method
+baseline method
 
 jakob johnson, 4/02/2024
 """
 import os
-import random
 
 import mlflow
 import numpy as np
@@ -17,73 +16,14 @@ from torchmetrics.classification import MulticlassAccuracy
 from torchvision import models
 from tqdm import tqdm
 
-from utils import (
-    ConvNeXt,
-    ResNet18,
-    ResNet50,
-    SimpleMLP,
-    TransformTorchDataset,
-    ViT,
-    get_datasets,
-    parse_configs,
-)
-
-
-class XRDDataset:
-    """
-    TEMPORARY DEMO FOR FUTURE IMPLEMENTATION
-
-    gets random XRD data for selected route
-
-    need to pair with real images for actual implementation
-    """
-
-    def __init__(self, root):
-        self.root = root
-
-        self.datasets = {
-            "U3O8": TransformTorchDataset(
-                dirpath=os.path.join(root, "U3O8"),
-                # transform=v2.Compose([RandomNoiseTransform(noise_level=0.001)]),
-            ),
-            "UO2": TransformTorchDataset(
-                dirpath=os.path.join(root, "UO2"),
-                # transform=v2.Compose([RandomNoiseTransform(noise_level=0.001)]),
-            ),
-            "UO3": TransformTorchDataset(
-                dirpath=os.path.join(root, "UO3"),
-                # transform=v2.Compose([RandomNoiseTransform(noise_level=0.001)]),
-            ),
-        }
-
-        self.route_map = {
-            0: "U3O8",
-            1: "UO2",
-            2: "UO3",
-            3: "U3O8",
-            4: "UO2",
-            5: "UO3",
-            6: "UO2",
-            7: "UO2",
-            8: "U3O8",
-            9: "UO2",
-            10: "UO3",
-            11: "U3O8",
-            12: "UO2",
-            13: "UO3",
-        }
-
-    def get_xrd_from_route(self, route_int):
-        # get random XRD data from selected route
-        mat = self.route_map[route_int]
-        return self.datasets[mat][random.randint(0, len(self.datasets[mat]) - 1)][0]
+from utils import ConvNeXt, ResNet18, ResNet50, ViT, get_datasets, parse_configs
 
 
 def cosine_annealing(step, total_steps, lr_max, lr_min):
     return lr_min + (lr_max - lr_min) * 0.5 * (1 + np.cos(step / total_steps * np.pi))
 
 
-def train_loop(dataloader, xrd_datasets, image_model, xrd_model, model, optimizer):
+def train_loop(dataloader, model, optimizer):
     """Train the model for one epoch."""
     # set model to train mode
     model.train()
@@ -107,23 +47,8 @@ def train_loop(dataloader, xrd_datasets, image_model, xrd_model, model, optimize
         # zero gradients from previous step
         optimizer.zero_grad()
 
-        # get XRD data
-        xrd_data = []
-        for label in labels:
-            xrd_data.append(xrd_datasets.get_xrd_from_route(label.item()))
-
-        xrd_data = torch.stack(xrd_data)
-        xrd_data = xrd_data.to(configs.device)
-
-        # get image representation and XRD token
-        _, image_features = image_model(images, return_feature=True)
-        _, xrd_features = xrd_model(xrd_data, return_feature=True)
-
-        # concatenate features
-        features = torch.cat((image_features, xrd_features), dim=1)
-
         # compute prediction and loss
-        logits = model(features)
+        logits = model(images)
         loss = loss_fn(logits, labels)
         train_loss += loss.item()
 
@@ -142,7 +67,7 @@ def train_loop(dataloader, xrd_datasets, image_model, xrd_model, model, optimize
     }
 
 
-def val_loop(val_dataloader, xrd_datasets, image_model, xrd_model, model):
+def val_loop(val_dataloader, model):
     """Validate the model for one epoch."""
     # set model to eval mode
     model.eval()
@@ -161,23 +86,8 @@ def val_loop(val_dataloader, xrd_datasets, image_model, xrd_model, model):
             # move images to GPU if needed
             images, labels = (images.to(configs.device), labels.to(configs.device))
 
-            # get XRD data
-            xrd_data = []
-            for label in labels:
-                xrd_data.append(xrd_datasets.get_xrd_from_route(label.item()))
-
-            xrd_data = torch.stack(xrd_data)
-            xrd_data = xrd_data.to(configs.device)
-
-            # get image representation and XRD token
-            _, image_features = image_model(images, return_feature=True)
-            _, xrd_features = xrd_model(xrd_data, return_feature=True)
-
-            # concatenate features
-            features = torch.cat((image_features, xrd_features), dim=1)
-
             # compute prediction and loss
-            logits = model(features)
+            logits = model(images)
             val_loss += loss_fn(logits, labels).item()
             preds = torch.argmax(F.softmax(logits, dim=1), dim=1)
 
@@ -198,7 +108,7 @@ if __name__ == "__main__":
     ## SET UP DATASET ##
     ####################
 
-    # get image datasets
+    # get datasets
     datasets = get_datasets(configs)
     NUM_CLASSES = configs.num_classes
 
@@ -219,10 +129,6 @@ if __name__ == "__main__":
         num_workers=configs.workers,
     )
 
-    # get XRD datasets
-
-    xrd_datasets = XRDDataset(configs.xrd_root)
-
     ##################
     ## SET UP MODEL ##
     ##################
@@ -231,49 +137,26 @@ if __name__ == "__main__":
     # choose model architecture
     match configs.arch.lower():
         case "resnet18":
-            image_model = ResNet18(num_classes=NUM_CLASSES)
+            model = ResNet18(num_classes=NUM_CLASSES)
             # model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
         case "resnet50":
-            image_model = ResNet50(num_classes=NUM_CLASSES)
+            model = ResNet50(num_classes=NUM_CLASSES)
             # model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
         case "convnext":
-            image_model = ConvNeXt()
-            image_model.load_state_dict(models.ConvNeXt_Small_Weights.IMAGENET1K_V1.get_state_dict())
+            model = ConvNeXt()
+            model.load_state_dict(models.ConvNeXt_Small_Weights.IMAGENET1K_V1.get_state_dict())
             if configs.dataset != "imagenet":
-                image_model.classifier[2] = nn.Linear(image_model.classifier[2].in_features, NUM_CLASSES)
+                model.classifier[2] = nn.Linear(model.classifier[2].in_features, NUM_CLASSES)
         case "vit":
-            image_model = ViT()
-            image_model.load_state_dict(models.ViT_L_16_Weights.IMAGENET1K_V1.get_state_dict())
+            model = ViT()
+            model.load_state_dict(models.ViT_L_16_Weights.IMAGENET1K_V1.get_state_dict())
             if configs.dataset != "imagenet":
-                image_model.heads.head = nn.Linear(image_model.heads.head.in_features, NUM_CLASSES)
+                model.heads.head = nn.Linear(model.heads.head.in_features, NUM_CLASSES)
 
-    # load checkpoint
-    image_model.load_state_dict(torch.load(configs.checkpoint, map_location="cpu"))
-    image_model.to(configs.device)
+    # load checkpoint if provided
+    if configs.checkpoint is not None:
+        model.load_state_dict(torch.load(configs.checkpoint, map_location="cpu"))
 
-    # freeze model
-    image_model.eval()
-    for param in image_model.parameters():
-        param.requires_grad = False
-
-    # set up XRD model
-    xrd_model = SimpleMLP(input_dim=4096, num_classes=3)
-
-    # load checkpoint
-    xrd_model.load_state_dict(torch.load(configs.xrd_checkpoint, map_location="cpu"))
-    xrd_model.to(configs.device)
-
-    # freeze model
-    xrd_model.eval()
-    for param in xrd_model.parameters():
-        param.requires_grad = False
-
-    # set up classifier model
-    model = nn.Sequential(
-        nn.Linear(2048 + 16, 2048 + 16),
-        nn.ReLU(),
-        nn.Linear(2048 + 16, NUM_CLASSES),
-    )
     model.to(configs.device)
 
     # initialize optimizer and scheduler
@@ -308,8 +191,8 @@ if __name__ == "__main__":
         best_metric = 0
         for epoch in range(configs.epochs):
             print(f"epoch {epoch + 1}/{configs.epochs}")
-            train_stats = train_loop(train_dataloader, xrd_datasets, image_model, xrd_model, model, optimizer)
-            val_stats = val_loop(val_dataloader, xrd_datasets, image_model, xrd_model, model)
+            train_stats = train_loop(train_dataloader, model, optimizer)
+            val_stats = val_loop(val_dataloader, model)
             mlflow.log_metrics(train_stats | val_stats, step=epoch)
 
             print(
@@ -336,7 +219,7 @@ if __name__ == "__main__":
         model.to(configs.device)
 
     # test best model
-    test_stats = val_loop(val_dataloader, xrd_datasets, image_model, xrd_model, model)
+    test_stats = val_loop(val_dataloader, model)
     print(f"test acc: {test_stats['val_acc']*100:.2f}%, test loss: {test_stats['val_loss']:.4f}")
 
     mlflow.log_metrics(test_stats, step=configs.epochs)

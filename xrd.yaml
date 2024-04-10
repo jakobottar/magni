@@ -1,0 +1,12 @@
+arch: simplemlp
+batch-size: 8
+dataset: xrd
+dataset-root: ./data/
+device: cuda
+epochs: 10
+lr: 0.001
+momentum: 0.9
+weight-decay: 1.0e-05
+workers: 4
+
+seed: -1

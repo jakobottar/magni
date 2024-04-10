@@ -20,7 +20,7 @@ def parse_configs():
         type=str,
         default="resnet18",
         help="model architecture",
-        choices=["resnet18", "resnet50", "convnext", "vit"],
+        choices=["resnet18", "resnet50", "convnext", "vit", "simplemlp", "simplecnn"],
     )
     parser.add_argument("--batch-size", type=int, default=8, help="batch size")
     parser.add_argument(
@@ -52,7 +52,7 @@ def parse_configs():
     parser.add_argument("--root", type=str, default="runs", help="root of folder to save runs in")
     parser.add_argument("-S", "--seed", type=int, default=-1, help="random seed, -1 for random")
     parser.add_argument("--skip-train", action="store_true", help="skip training")
-    parser.add_argument("--transforms", type=str, default=None, nargs="+")
+    parser.add_argument("--transforms", type=str, default="randomcrop", nargs="+")
     parser.add_argument(
         "--use-train-transf-for-val",
         action="store_true",
@@ -60,6 +60,8 @@ def parse_configs():
     )
     parser.add_argument("--weight-decay", type=float, default=1e-9, help="optimizer weight decay")
     parser.add_argument("--workers", type=int, default=2, help="dataloader worker threads")
+    parser.add_argument("--xrd-checkpoint", type=str, default=None, help="checkpoint file for XRD model")
+    parser.add_argument("--xrd-root", type=str, default="./data/", help="XRD dataset location")
 
     configs, _ = parser.parse_known_args()
 
