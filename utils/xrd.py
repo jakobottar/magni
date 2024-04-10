@@ -9,7 +9,7 @@ import pandas as pd
 COLS = "?,??,TwoTheta,Theta,Intensity"
 ## interpolation constants
 X_MIN = 10
-X_MAX = 90
+X_MAX = 70
 NUM_POINTS = 4096
 
 
@@ -114,8 +114,8 @@ def process_xrd_data(data: pd.DataFrame) -> pd.DataFrame:
     ## subtract the minimum intensity from all intensities
     data["Intensity"] = data["Intensity"] - data["Intensity"].min()
 
-    ## drop datapoints greather than 90 degrees or less than 10 degrees
-    data = data[(data["TwoTheta"] >= 10) & (data["TwoTheta"] <= 90)]
+    ## drop datapoints greather than 70 degrees or less than 10 degrees
+    data = data[(data["TwoTheta"] >= 10) & (data["TwoTheta"] <= 70)]
 
     ## interpolate the data to match a standard range of 10 to 90 degrees
     x = np.linspace(X_MIN, X_MAX, NUM_POINTS)  # delta of 0.1953125 degrees
