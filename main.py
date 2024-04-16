@@ -34,6 +34,23 @@ LOGIT_MASKS = {
     2: [0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1],  # UO3
 }
 
+LOGIT_MASKS_2 = {
+    0: [1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0],
+    1: [0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0],
+    2: [0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1],
+    3: [1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0],
+    4: [0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0],
+    5: [0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1],
+    6: [0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0],
+    7: [0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0],
+    8: [1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0],
+    9: [0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0],
+    10: [0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1],
+    11: [1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0],
+    12: [0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0],
+    13: [0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1],
+}
+
 
 class XRDDataset:
     """
@@ -188,6 +205,9 @@ def val_loop(val_dataloader, xrd_datasets, image_model, xrd_model, model):
             if configs.use_logit_masking_baseline:
                 # get class pred from XRD model
                 xrd_preds = torch.argmax(F.softmax(xrd_logits, dim=1), dim=1)
+
+                # # get class pred from label (for true best case)
+                # xrd_preds = labels
 
                 # make mask for image_logits with class pred
                 for i, (logit, pred) in enumerate(zip(image_logits, xrd_preds)):
