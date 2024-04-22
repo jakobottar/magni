@@ -28,6 +28,29 @@ from utils import (
     parse_configs,
 )
 
+LOGIT_MASKS = {
+    0: [1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0],  # U3O8
+    1: [0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0],  # UO2
+    2: [0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1],  # UO3
+}
+
+LOGIT_MASKS_2 = {
+    0: [1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0],
+    1: [0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0],
+    2: [0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1],
+    3: [1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0],
+    4: [0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0],
+    5: [0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1],
+    6: [0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0],
+    7: [0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0],
+    8: [1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0],
+    9: [0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0],
+    10: [0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1],
+    11: [1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0],
+    12: [0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0],
+    13: [0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1],
+}
+
 
 class XRDDataset:
     """
@@ -170,14 +193,29 @@ def val_loop(val_dataloader, xrd_datasets, image_model, xrd_model, model):
             xrd_data = xrd_data.to(configs.device)
 
             # get image representation and XRD token
-            _, image_features = image_model(images, return_feature=True)
-            _, xrd_features = xrd_model(xrd_data, return_feature=True)
+            image_logits, image_features = image_model(images, return_feature=True)
+            xrd_logits, xrd_features = xrd_model(xrd_data, return_feature=True)
 
             # concatenate features
             features = torch.cat((image_features, xrd_features), dim=1)
 
             # compute prediction and loss
             logits = model(features)
+
+            if configs.use_logit_masking_baseline:
+                # get class pred from XRD model
+                xrd_preds = torch.argmax(F.softmax(xrd_logits, dim=1), dim=1)
+
+                # # get class pred from label (for true best case)
+                # xrd_preds = labels
+
+                # make mask for image_logits with class pred
+                for i, (logit, pred) in enumerate(zip(image_logits, xrd_preds)):
+                    mask = torch.tensor(LOGIT_MASKS[pred.item()]).to(configs.device)
+                    image_logits[i] = logit * mask
+
+                logits = image_logits
+
             val_loss += loss_fn(logits, labels).item()
             preds = torch.argmax(F.softmax(logits, dim=1), dim=1)
 
