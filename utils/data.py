@@ -12,11 +12,13 @@ from torchvision import datasets
 from torchvision.transforms import v2
 
 from .imagenet import ImageNetDataset
+from .xrd import PairedDataset
 
 norm_dict = {
     "cifar10": {"mean": [0.4914, 0.4822, 0.4465], "std": [0.2470, 0.2435, 0.2616]},
     "cifar100": {"mean": [0.5071, 0.4867, 0.4408], "std": [0.2675, 0.2565, 0.2761]},
-    "nfs": {"mean": [0.3843, 0.3843, 0.3843], "std": [0.1692, 0.1692, 0.1692]},
+    "old-nfs": {"mean": [0.3843, 0.3843, 0.3843], "std": [0.1692, 0.1692, 0.1692]},
+    "sem": {"mean": [0.3843, 0.3843, 0.3843], "std": [0.1692, 0.1692, 0.1692]},
     "xrd": {"mean": [0], "std": [0]},
     "imagenet": {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
     "imagenet-o": {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
@@ -210,8 +212,9 @@ def get_datasets(configs) -> dict:
     transforms = get_transforms(configs)
 
     match configs.dataset.lower():
-        case "nfs":
-            id_datasets["num_classes"] = 14
+        case "old-nfs":
+            ### just nfs routes, no xrd. uo4 routes included.
+            id_datasets["num_classes"] = 17
 
             id_datasets["train"] = ImageFolderDataset(
                 split="train",
@@ -224,49 +227,33 @@ def get_datasets(configs) -> dict:
                 transform=transforms["val"],
             )
 
-        case "xrd":
-            id_datasets["num_classes"] = 3
+        case "sem":
+            ### paired dataset with just SEM images
+            id_datasets["num_classes"] = 13
 
-            id_datasets["train"] = TransformTorchDataset(
-                dirpath=os.path.join(configs.dataset_root, "finalmat", "train"),
-                transform=v2.Compose([RandomNoiseTransform(noise_level=0.002)]),
-            )
-            id_datasets["val"] = TransformTorchDataset(
-                dirpath=os.path.join(configs.dataset_root, "finalmat", "val"),
-                # transform=v2.Compose([RandomNoiseTransform(noise_level=0.1)]),
-            )
-
-        case "cifar10":
-            id_datasets["num_classes"] = 10
-
-            id_datasets["train"] = datasets.CIFAR10(
-                root=configs.dataset_root,
-                train=True,
-                download=True,
-                transform=transforms["train"],
-            )
-            id_datasets["val"] = datasets.CIFAR10(
-                root=configs.dataset_root,
-                train=False,
-                download=True,
-                transform=transforms["val"],
-            )
-
-        case "imagenet":
-            id_datasets["num_classes"] = 1000
-
-            id_datasets["train"] = ImageNetDataset(
+            id_datasets["train"] = PairedDataset(
                 root=configs.dataset_root,
                 split="train",
-                transform=transforms["train"],
-                fake_multiview=configs.use_fake_multiview,
+                sem_transform=transforms["train"],
+                mode="sem",
             )
-
-            id_datasets["val"] = ImageNetDataset(
+            id_datasets["val"] = PairedDataset(
                 root=configs.dataset_root,
                 split="val",
-                transform=transforms["val"],
-                fake_multiview=configs.use_fake_multiview,
+                sem_transform=transforms["val"],
+                mode="sem",
             )
+
+        case "xrd":
+            ### paired dataset with just XRD images
+            id_datasets["num_classes"] = 3
+
+            raise NotImplementedError("XRD dataset not implemented yet")
+
+        case "paired":
+            ### paired dataset with both SEM and XRD images
+            id_datasets["num_classes"] = 13
+
+            raise NotImplementedError("Paired dataset not implemented yet")
 
     return id_datasets

@@ -110,7 +110,7 @@ if __name__ == "__main__":
 
     # get datasets
     datasets = get_datasets(configs)
-    NUM_CLASSES = configs.num_classes
+    NUM_CLASSES = datasets["num_classes"]
 
     print(datasets["train"])
     print(datasets["val"])

@@ -5,6 +5,9 @@ import zipfile
 
 import numpy as np
 import pandas as pd
+import torch
+from PIL import Image
+from torch.utils.data import Dataset
 
 COLS = "?,??,TwoTheta,Theta,Intensity"
 ## interpolation constants
@@ -128,3 +131,65 @@ def process_xrd_data(data: pd.DataFrame) -> pd.DataFrame:
     data["Intensity"] = data["Intensity"] / data["Intensity"].sum()
 
     return data
+
+
+class PairedDataset(Dataset):
+    def __init__(self, root: str, split: str = "train", sem_transform=None, xrd_transform=None, mode="paired"):
+        self.root = root
+        self.split = split
+        self.sem_transform = sem_transform
+        self.xrd_transform = xrd_transform
+        self.mode = mode  # can be 'paired', 'sem', 'xrd'
+
+        # load dataset metadata file
+        try:
+            self.df = pd.read_csv(os.path.join(self.root, split, "metadata.csv"))
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(f"Dataset {self.root} does not exist, make sure it has been built.") from exc
+
+        if self.mode == "paired":
+            # convert route to label
+            self.df["label"] = self.df["route"].astype("category").cat.codes
+            self.classes = list(self.df["route"].astype("category").cat.categories)
+        elif self.mode == "sem":
+            # convert route to label
+            self.df["label"] = self.df["route"].astype("category").cat.codes
+            self.classes = list(self.df["route"].astype("category").cat.categories)
+        elif self.mode == "xrd":
+            # convert route to label
+            self.df["label"] = self.df["finalmat"].astype("category").cat.codes
+            self.classes = list(self.df["finalmat"].astype("category").cat.categories)
+            # drop duplicates of xrd_file column
+            self.df = self.df.drop_duplicates(subset=["xrd_file"])
+        else:
+            raise ValueError(f"Invalid mode: {self.mode}")
+
+    def __len__(self):
+        return len(self.df)
+
+    def __getitem__(self, idx):
+        sample = self.df.iloc[idx]
+
+        # get sample
+        if self.mode == "paired" or self.mode == "sem":
+            sem = Image.open(os.path.join(self.root, self.split, sample["sem_file"])).convert("RGB")
+            if self.sem_transform:
+                sem = self.sem_transform(sem)
+        if self.mode == "paired" or self.mode == "xrd":
+            xrd = np.load(os.path.join(self.root, self.split, sample["xrd_file"]))
+            if self.xrd_transform:
+                xrd = self.xrd_transform(xrd)
+
+        # get label
+        label = np.int64(sample["label"])
+
+        # return data
+        if self.mode == "xrd":
+            return xrd, label
+        elif self.mode == "sem":
+            return sem, label
+        else:  # paired mode
+            return xrd, sem, label
+
+    def __repr__(self):
+        return f"PairedDataset: {self.split} split with {self.__len__()} samples"
