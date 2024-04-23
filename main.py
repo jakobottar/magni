@@ -22,91 +22,23 @@ from utils import (
     ResNet18,
     ResNet50,
     SimpleMLP,
-    TransformTorchDataset,
     ViT,
     get_datasets,
     parse_configs,
 )
 
 LOGIT_MASKS = {
-    0: [1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0],  # U3O8
-    1: [0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0],  # UO2
-    2: [0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1],  # UO3
+    0: [1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U3O8
+    1: [0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0],  # UO2
+    2: [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1],  # UO3
 }
-
-LOGIT_MASKS_2 = {
-    0: [1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0],
-    1: [0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0],
-    2: [0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1],
-    3: [1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0],
-    4: [0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0],
-    5: [0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1],
-    6: [0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0],
-    7: [0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0],
-    8: [1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0],
-    9: [0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0],
-    10: [0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1],
-    11: [1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0],
-    12: [0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0],
-    13: [0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1],
-}
-
-
-class XRDDataset:
-    """
-    TEMPORARY DEMO FOR FUTURE IMPLEMENTATION
-
-    gets random XRD data for selected route
-
-    need to pair with real images for actual implementation
-    """
-
-    def __init__(self, root):
-        self.root = root
-
-        self.datasets = {
-            "U3O8": TransformTorchDataset(
-                dirpath=os.path.join(root, "U3O8"),
-                # transform=v2.Compose([RandomNoiseTransform(noise_level=0.001)]),
-            ),
-            "UO2": TransformTorchDataset(
-                dirpath=os.path.join(root, "UO2"),
-                # transform=v2.Compose([RandomNoiseTransform(noise_level=0.001)]),
-            ),
-            "UO3": TransformTorchDataset(
-                dirpath=os.path.join(root, "UO3"),
-                # transform=v2.Compose([RandomNoiseTransform(noise_level=0.001)]),
-            ),
-        }
-
-        self.route_map = {
-            0: "U3O8",
-            1: "UO2",
-            2: "UO3",
-            3: "U3O8",
-            4: "UO2",
-            5: "UO3",
-            6: "UO2",
-            7: "UO2",
-            8: "U3O8",
-            9: "UO2",
-            10: "UO3",
-            11: "U3O8",
-            12: "UO2",
-            13: "UO3",
-        }
-
-    def get_xrd_from_route(self, route_int):
-        # get random XRD data from selected route
-        mat = self.route_map[route_int]
-        return self.datasets[mat][random.randint(0, len(self.datasets[mat]) - 1)][0]
 
 
 def cosine_annealing(step, total_steps, lr_max, lr_min):
     return lr_min + (lr_max - lr_min) * 0.5 * (1 + np.cos(step / total_steps * np.pi))
 
 
-def train_loop(dataloader, xrd_datasets, image_model, xrd_model, model, optimizer):
+def train_loop(dataloader, image_model, xrd_model, model, optimizer):
     """Train the model for one epoch."""
     # set model to train mode
     model.train()
@@ -120,30 +52,23 @@ def train_loop(dataloader, xrd_datasets, image_model, xrd_model, model, optimize
 
     tbar_loader = tqdm(dataloader, desc="train", dynamic_ncols=True, disable=configs.no_tqdm)
 
-    for images, labels in tbar_loader:
+    for xrds, sems, labels in tbar_loader:
         # move images to GPU if needed
-        images, labels = (
-            images.to(configs.device),
+        xrds, sems, labels = (
+            xrds.to(configs.device),
+            sems.to(configs.device),
             labels.to(configs.device),
         )
 
         # zero gradients from previous step
         optimizer.zero_grad()
 
-        # get XRD data
-        xrd_data = []
-        for label in labels:
-            xrd_data.append(xrd_datasets.get_xrd_from_route(label.item()))
-
-        xrd_data = torch.stack(xrd_data)
-        xrd_data = xrd_data.to(configs.device)
-
         # get image representation and XRD token
-        _, image_features = image_model(images, return_feature=True)
-        _, xrd_features = xrd_model(xrd_data, return_feature=True)
+        _, sem_features = image_model(sems, return_feature=True)
+        _, xrd_features = xrd_model(xrds, return_feature=True)
 
         # concatenate features
-        features = torch.cat((image_features, xrd_features), dim=1)
+        features = torch.cat((sem_features, xrd_features.squeeze()), dim=1)
 
         # compute prediction and loss
         logits = model(features)
@@ -165,7 +90,7 @@ def train_loop(dataloader, xrd_datasets, image_model, xrd_model, model, optimize
     }
 
 
-def val_loop(val_dataloader, xrd_datasets, image_model, xrd_model, model):
+def val_loop(val_dataloader, image_model, xrd_model, model):
     """Validate the model for one epoch."""
     # set model to eval mode
     model.eval()
@@ -180,41 +105,37 @@ def val_loop(val_dataloader, xrd_datasets, image_model, xrd_model, model):
         # validate on in-distribution data
         tbar_loader = tqdm(val_dataloader, desc="val", dynamic_ncols=True, disable=configs.no_tqdm)
 
-        for images, labels in tbar_loader:
+        for xrds, sems, labels in tbar_loader:
             # move images to GPU if needed
-            images, labels = (images.to(configs.device), labels.to(configs.device))
-
-            # get XRD data
-            xrd_data = []
-            for label in labels:
-                xrd_data.append(xrd_datasets.get_xrd_from_route(label.item()))
-
-            xrd_data = torch.stack(xrd_data)
-            xrd_data = xrd_data.to(configs.device)
+            xrds, sems, labels = (
+                xrds.to(configs.device),
+                sems.to(configs.device),
+                labels.to(configs.device),
+            )
 
             # get image representation and XRD token
-            image_logits, image_features = image_model(images, return_feature=True)
-            xrd_logits, xrd_features = xrd_model(xrd_data, return_feature=True)
+            sem_logits, sem_features = image_model(sems, return_feature=True)
+            xrd_logits, xrd_features = xrd_model(xrds, return_feature=True)
 
             # concatenate features
-            features = torch.cat((image_features, xrd_features), dim=1)
+            features = torch.cat((sem_features, xrd_features.squeeze()), dim=1)
 
             # compute prediction and loss
             logits = model(features)
 
             if configs.use_logit_masking_baseline:
                 # get class pred from XRD model
-                xrd_preds = torch.argmax(F.softmax(xrd_logits, dim=1), dim=1)
+                xrd_preds = torch.argmax(F.softmax(xrd_logits.squeeze(), dim=1), dim=1)
 
                 # # get class pred from label (for true best case)
                 # xrd_preds = labels
 
                 # make mask for image_logits with class pred
-                for i, (logit, pred) in enumerate(zip(image_logits, xrd_preds)):
+                for i, (logit, pred) in enumerate(zip(sem_logits, xrd_preds)):
                     mask = torch.tensor(LOGIT_MASKS[pred.item()]).to(configs.device)
-                    image_logits[i] = logit * mask
+                    sem_logits[i] = logit * mask
 
-                logits = image_logits
+                logits = sem_logits
 
             val_loss += loss_fn(logits, labels).item()
             preds = torch.argmax(F.softmax(logits, dim=1), dim=1)
@@ -231,6 +152,7 @@ def val_loop(val_dataloader, xrd_datasets, image_model, xrd_model, model):
 if __name__ == "__main__":
     # parse args/config file
     configs = parse_configs()
+    configs.dataset = "paired"
 
     ####################
     ## SET UP DATASET ##
@@ -238,7 +160,7 @@ if __name__ == "__main__":
 
     # get image datasets
     datasets = get_datasets(configs)
-    NUM_CLASSES = configs.num_classes
+    NUM_CLASSES = datasets["num_classes"]
 
     print(datasets["train"])
     print(datasets["val"])
@@ -256,10 +178,6 @@ if __name__ == "__main__":
         shuffle=False,
         num_workers=configs.workers,
     )
-
-    # get XRD datasets
-
-    xrd_datasets = XRDDataset(configs.xrd_root)
 
     ##################
     ## SET UP MODEL ##
@@ -346,8 +264,8 @@ if __name__ == "__main__":
         best_metric = 0
         for epoch in range(configs.epochs):
             print(f"epoch {epoch + 1}/{configs.epochs}")
-            train_stats = train_loop(train_dataloader, xrd_datasets, image_model, xrd_model, model, optimizer)
-            val_stats = val_loop(val_dataloader, xrd_datasets, image_model, xrd_model, model)
+            train_stats = train_loop(train_dataloader, image_model, xrd_model, model, optimizer)
+            val_stats = val_loop(val_dataloader, image_model, xrd_model, model)
             mlflow.log_metrics(train_stats | val_stats, step=epoch)
 
             print(
@@ -374,7 +292,7 @@ if __name__ == "__main__":
         model.to(configs.device)
 
     # test best model
-    test_stats = val_loop(val_dataloader, xrd_datasets, image_model, xrd_model, model)
+    test_stats = val_loop(val_dataloader, image_model, xrd_model, model)
     print(f"test acc: {test_stats['val_acc']*100:.2f}%, test loss: {test_stats['val_loss']:.4f}")
 
     mlflow.log_metrics(test_stats, step=configs.epochs)
