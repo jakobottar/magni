@@ -15,6 +15,24 @@ X_MIN = 10
 X_MAX = 70
 NUM_POINTS = 4096
 
+ROUTES = [
+    "U3O8AUC",
+    "U3O8MDU",
+    "U3O8SDU",
+    "U3O8UO4",
+    "UO2AUCd",
+    "UO2AUCi",
+    "UO2MDU",
+    "UO2SDU",
+    "UO2UO4",
+    "UO3AUC",
+    "UO3MDU",
+    "UO3SDU",
+    "UO3UO4",
+]
+
+FINALMATS = ["U3O8", "UO2", "UO3"]
+
 
 def parse_xml_file(filename) -> pd.DataFrame:
 
@@ -133,7 +151,7 @@ def process_xrd_data(data: pd.DataFrame) -> pd.DataFrame:
     return data
 
 
-class PairedDataset(Dataset):
+class PairedDataset(torch.utils.data.Dataset):
     def __init__(self, root: str, split: str = "train", sem_transform=None, xrd_transform=None, mode="paired"):
         self.root = root
         self.split = split
@@ -149,20 +167,19 @@ class PairedDataset(Dataset):
 
         if self.mode == "paired":
             # convert route to label
-            self.df["label"] = self.df["route"].astype("category").cat.codes
-            self.classes = list(self.df["route"].astype("category").cat.categories)
+            self.df["label"] = self.df["route"].apply(ROUTES.index)
         elif self.mode == "sem":
             # convert route to label
-            self.df["label"] = self.df["route"].astype("category").cat.codes
-            self.classes = list(self.df["route"].astype("category").cat.categories)
+            self.df["label"] = self.df["route"].apply(ROUTES.index)
         elif self.mode == "xrd":
             # convert route to label
-            self.df["label"] = self.df["finalmat"].astype("category").cat.codes
-            self.classes = list(self.df["finalmat"].astype("category").cat.categories)
+            self.df["label"] = self.df["finalmat"].apply(FINALMATS.index)
             # drop duplicates of xrd_file column
             self.df = self.df.drop_duplicates(subset=["xrd_file"])
         else:
             raise ValueError(f"Invalid mode: {self.mode}")
+
+        self.classes = FINALMATS if self.mode == "xrd" else ROUTES
 
     def __len__(self):
         return len(self.df)
