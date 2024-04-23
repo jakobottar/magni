@@ -249,7 +249,20 @@ def get_datasets(configs) -> dict:
             ### paired dataset with just XRD images
             id_datasets["num_classes"] = 3
 
-            raise NotImplementedError("XRD dataset not implemented yet")
+            xrd_transform = v2.Compose([torch.from_numpy, RandomNoiseTransform(noise_level=0.002)])
+
+            id_datasets["train"] = PairedDataset(
+                root=configs.dataset_root,
+                split="train",
+                xrd_transform=xrd_transform,
+                mode="xrd",
+            )
+            id_datasets["val"] = PairedDataset(
+                root=configs.dataset_root,
+                split="val",
+                xrd_transform=torch.from_numpy,
+                mode="xrd",
+            )
 
         case "paired":
             ### paired dataset with both SEM and XRD images

@@ -49,7 +49,7 @@ def train_loop(dataloader, model, optimizer):
         optimizer.zero_grad()
 
         # compute prediction and loss
-        logits = model(data)
+        logits = model(data).squeeze()
         loss = loss_fn(logits, labels)
         train_loss += loss.item()
 
@@ -88,7 +88,7 @@ def val_loop(val_dataloader, model):
             data, labels = (data.to(configs.device), labels.to(configs.device))
 
             # compute prediction and loss
-            logits = model(data)
+            logits = model(data).squeeze()
             val_loss += loss_fn(logits, labels).item()
             preds = torch.argmax(F.softmax(logits, dim=1), dim=1)
 
