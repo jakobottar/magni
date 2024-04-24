@@ -33,6 +33,23 @@ LOGIT_MASKS = {
     2: [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1],  # UO3
 }
 
+# logit masks for true best case
+LOGIT_MASKS_2 = {
+    0: [1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U3O8
+    1: [1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U3O8
+    2: [1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U3O8
+    3: [1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U3O8
+    4: [0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0],  # UO2
+    5: [0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0],  # UO2
+    6: [0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0],  # UO2
+    7: [0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0],  # UO2
+    8: [0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0],  # UO2
+    9: [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1],  # UO3
+    10: [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1],  # UO3
+    11: [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1],  # UO3
+    12: [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1],  # UO3
+}
+
 
 def cosine_annealing(step, total_steps, lr_max, lr_min):
     return lr_min + (lr_max - lr_min) * 0.5 * (1 + np.cos(step / total_steps * np.pi))
@@ -101,6 +118,7 @@ def val_loop(val_dataloader, image_model, xrd_model, model):
 
     num_batches = len(val_dataloader)
     val_loss = 0.0
+    incorrect = 0
     with torch.no_grad():
         # validate on in-distribution data
         tbar_loader = tqdm(val_dataloader, desc="val", dynamic_ncols=True, disable=configs.no_tqdm)
@@ -133,6 +151,7 @@ def val_loop(val_dataloader, image_model, xrd_model, model):
                 # make mask for image_logits with class pred
                 for i, (logit, pred) in enumerate(zip(sem_logits, xrd_preds)):
                     mask = torch.tensor(LOGIT_MASKS[pred.item()]).to(configs.device)
+                    # mask = torch.tensor(LOGIT_MASKS_2[labels[i].item()]).to(configs.device)
                     sem_logits[i] = logit * mask
 
                 logits = sem_logits
