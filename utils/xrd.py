@@ -1,13 +1,18 @@
 import io
+import math
 import os
 import xml.etree.ElementTree as ET
 import zipfile
 
 import numpy as np
 import pandas as pd
+
+# import scipy
 import torch
 from PIL import Image
 from torch.utils.data import Dataset
+
+# from torchvision.transforms import v2
 
 COLS = "?,??,TwoTheta,Theta,Intensity"
 ## interpolation constants
@@ -32,6 +37,41 @@ ROUTES = [
 ]
 
 FINALMATS = ["U3O8", "UO2", "UO3"]
+
+
+class RandomNoiseTransform:
+    def __init__(self, noise_level=0.1):
+        self.noise_level = noise_level
+
+    def __call__(self, data):
+        noise = torch.randn_like(data) * self.noise_level
+        return data + noise
+
+
+class Normalize:
+    def __init__(self):
+        self.xpts = np.linspace(X_MIN, X_MAX, NUM_POINTS)
+
+    def __call__(self, data):
+        auc = np.trapz(data, self.xpts)
+        data = data / auc
+        print(np.trapz(data, self.xpts))
+        return data
+
+
+def XRDtoPDF(xrd, min_angle, max_angle):
+
+    thetas = np.linspace(min_angle / 2.0, max_angle / 2.0, len(xrd))
+    Q = np.array([4 * math.pi * math.sin(math.radians(theta)) / 1.5406 for theta in thetas])
+    S = np.array(xrd).flatten()
+
+    pdf = []
+    R = np.linspace(1, 40, 1000)  # Only 1000 used to reduce compute time
+    integrand = Q * S * np.sin(Q * R[:, np.newaxis])
+
+    pdf = 2 * np.trapz(integrand, Q) / math.pi
+
+    return R, pdf
 
 
 def parse_xml_file(filename) -> pd.DataFrame:
@@ -210,3 +250,67 @@ class PairedDataset(torch.utils.data.Dataset):
 
     def __repr__(self):
         return f"PairedDataset: {self.split} split with {self.__len__()} samples"
+
+
+# if __name__ == "__main__":
+#     import random
+
+#     import matplotlib.pyplot as plt
+
+#     xrd_transform = v2.Compose([torch.from_numpy, RandomNoiseTransform(noise_level=0.002), Normalize()])
+
+#     train_dataset = PairedDataset(
+#         root="/scratch_nvme/jakobj/nfs/paired-xrd-sem",
+#         split="train",
+#         xrd_transform=xrd_transform,
+#         mode="xrd",
+#     )
+#     val_dataset = PairedDataset(
+#         root="/scratch_nvme/jakobj/nfs/paired-xrd-sem",
+#         split="val",
+#         xrd_transform=torch.from_numpy,
+#         mode="xrd",
+#     )
+
+#     train_sample = train_dataset[random.randint(0, len(train_dataset))][0].numpy()
+
+#     # plt.plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), train_sample.squeeze())
+#     # plt.savefig("realspace.png")
+#     # plt.clf()
+
+#     def plot_peaks(time, signal, prominence=None):
+#         index_data, _ = scipy.signal.find_peaks(np.array(signal), prominence=prominence)
+#         print(index_data[0])
+#         plt.plot(time, signal)
+#         plt.plot(
+#             time[index_data],
+#             signal[index_data],
+#             alpha=0.5,
+#             marker="o",
+#             mec="r",
+#             ms=9,
+#             ls=":",
+#             label="%d %s" % (index_data[0].size - 1, "Peaks"),
+#         )
+#         plt.legend(loc="best", framealpha=0.5, numpoints=1)
+#         plt.xlabel("Time(s)", fontsize=14)
+#         plt.ylabel("Amplitude", fontsize=14)
+
+#         plt.savefig("peaks.png")
+#         plt.clf()
+
+#     plot_peaks(np.linspace(X_MIN, X_MAX, NUM_POINTS), train_sample.squeeze(), prominence=0.025)
+
+#     # plt.plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), train_sample.squeeze())
+#     # plt.savefig("realspace-2.png")
+#     # plt.clf()
+
+#     # R, pdf = XRDtoPDF(train_sample, 10, 70)
+
+#     # plt.plot(R, pdf)
+#     # plt.savefig("pdf.png")
+
+#     # val_sample = val_dataset[0][0]
+
+#     # print(train_sample.shape, val_sample.shape)
+#     # print(torch.sum(train_sample), torch.sum(val_sample))

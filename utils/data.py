@@ -12,7 +12,7 @@ from torchvision import datasets
 from torchvision.transforms import v2
 
 from .imagenet import ImageNetDataset
-from .xrd import PairedDataset
+from .xrd import PairedDataset, RandomNoiseTransform
 
 norm_dict = {
     "cifar10": {"mean": [0.4914, 0.4822, 0.4465], "std": [0.2470, 0.2435, 0.2616]},
@@ -114,15 +114,6 @@ class ImageFolderDataset(torch.utils.data.Dataset):
 
     def __repr__(self):
         return "ImageFolderDataset"
-
-
-class RandomNoiseTransform:
-    def __init__(self, noise_level=0.1):
-        self.noise_level = noise_level
-
-    def __call__(self, data):
-        noise = torch.randn_like(data) * self.noise_level
-        return data + noise
 
 
 class Convert:
