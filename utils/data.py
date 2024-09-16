@@ -8,11 +8,15 @@ import pandas as pd
 import pyxis.torch as pxt
 import torch
 from PIL import Image
-from torchvision import datasets
 from torchvision.transforms import v2
 
 from .imagenet import ImageNetDataset
-from .xrd import PairedDataset, RandomNoiseTransform
+from .xrd import (
+    Normalize,
+    PairedDataset,
+    PeakHeightShiftTransform,
+    RandomNoiseTransform,
+)
 
 norm_dict = {
     "cifar10": {"mean": [0.4914, 0.4822, 0.4465], "std": [0.2470, 0.2435, 0.2616]},
@@ -240,7 +244,14 @@ def get_datasets(configs) -> dict:
             ### paired dataset with just XRD images
             id_datasets["num_classes"] = 3
 
-            xrd_transform = v2.Compose([torch.from_numpy, RandomNoiseTransform(noise_level=0.002)])
+            xrd_transform = v2.Compose(
+                [
+                    torch.from_numpy,
+                    # PeakHeightShiftTransform(shift_scale=0.15),
+                    RandomNoiseTransform(noise_level=0.002),
+                    Normalize(),
+                ]
+            )
 
             id_datasets["train"] = PairedDataset(
                 root=configs.dataset_root,
@@ -259,7 +270,14 @@ def get_datasets(configs) -> dict:
             ### paired dataset with both SEM and XRD images
             id_datasets["num_classes"] = 13
 
-            xrd_transform = v2.Compose([torch.from_numpy, RandomNoiseTransform(noise_level=0.002)])
+            xrd_transform = v2.Compose(
+                [
+                    torch.from_numpy,
+                    # PeakHeightShiftTransform(shift_scale=0.15),
+                    RandomNoiseTransform(noise_level=0.002),
+                    Normalize(),
+                ]
+            )
 
             id_datasets["train"] = PairedDataset(
                 root=configs.dataset_root,

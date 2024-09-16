@@ -5,7 +5,6 @@ combination multimodal method
 jakob johnson, 4/02/2024
 """
 import os
-import random
 
 import mlflow
 import numpy as np
@@ -50,12 +49,28 @@ LOGIT_MASKS_2 = {
     12: [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1],  # UO3
 }
 
+FAKE_TOKENS = {
+    0: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U3O8
+    1: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U3O8
+    2: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U3O8
+    3: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U3O8
+    4: [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # UO2
+    5: [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # UO2
+    6: [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # UO2
+    7: [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # UO2
+    8: [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # UO2
+    9: [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # UO3
+    10: [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # UO3
+    11: [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # UO3
+    12: [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # UO3
+}
+
 
 def cosine_annealing(step, total_steps, lr_max, lr_min):
     return lr_min + (lr_max - lr_min) * 0.5 * (1 + np.cos(step / total_steps * np.pi))
 
 
-def train_loop(dataloader, image_model, xrd_model, model, optimizer):
+def train_loop(dataloader, image_model, xrd_model, model, optimizer, use_fake_token=False):
     """Train the model for one epoch."""
     # set model to train mode
     model.train()
@@ -83,9 +98,14 @@ def train_loop(dataloader, image_model, xrd_model, model, optimizer):
         # get image representation and XRD token
         _, sem_features = image_model(sems, return_feature=True)
         _, xrd_features = xrd_model(xrds, return_feature=True)
+        xrd_features = xrd_features.squeeze()
+
+        # set up fake tokens
+        if use_fake_token:
+            xrd_features = torch.tensor([FAKE_TOKENS[label.item()] for label in labels]).to(configs.device)
 
         # concatenate features
-        features = torch.cat((sem_features, xrd_features.squeeze()), dim=1)
+        features = torch.cat((sem_features, xrd_features), dim=1)
 
         # compute prediction and loss
         logits = model(features)
@@ -107,7 +127,7 @@ def train_loop(dataloader, image_model, xrd_model, model, optimizer):
     }
 
 
-def val_loop(val_dataloader, image_model, xrd_model, model):
+def val_loop(val_dataloader, image_model, xrd_model, model, use_logit_masking=False, use_fake_token=False):
     """Validate the model for one epoch."""
     # set model to eval mode
     model.eval()
@@ -134,14 +154,19 @@ def val_loop(val_dataloader, image_model, xrd_model, model):
             # get image representation and XRD token
             sem_logits, sem_features = image_model(sems, return_feature=True)
             xrd_logits, xrd_features = xrd_model(xrds, return_feature=True)
+            xrd_features = xrd_features.squeeze()
+
+            # set up fake tokens
+            if use_fake_token:
+                xrd_features = torch.tensor([FAKE_TOKENS[label.item()] for label in labels]).to(configs.device)
 
             # concatenate features
-            features = torch.cat((sem_features, xrd_features.squeeze()), dim=1)
+            features = torch.cat((sem_features, xrd_features), dim=1)
 
             # compute prediction and loss
             logits = model(features)
 
-            if configs.use_logit_masking_baseline:
+            if use_logit_masking:
                 # get class pred from XRD model
                 xrd_preds = torch.argmax(F.softmax(xrd_logits.squeeze(), dim=1), dim=1)
 
@@ -283,8 +308,22 @@ if __name__ == "__main__":
         best_metric = 0
         for epoch in range(configs.epochs):
             print(f"epoch {epoch + 1}/{configs.epochs}")
-            train_stats = train_loop(train_dataloader, image_model, xrd_model, model, optimizer)
-            val_stats = val_loop(val_dataloader, image_model, xrd_model, model)
+            train_stats = train_loop(
+                train_dataloader,
+                image_model,
+                xrd_model,
+                model,
+                optimizer,
+                use_fake_token=configs.use_fake_token_baseline,
+            )
+            val_stats = val_loop(
+                val_dataloader,
+                image_model,
+                xrd_model,
+                model,
+                use_logit_masking=configs.use_logit_masking_baseline,
+                use_fake_token=configs.use_fake_token_baseline,
+            )
             mlflow.log_metrics(train_stats | val_stats, step=epoch)
 
             print(
@@ -311,7 +350,14 @@ if __name__ == "__main__":
         model.to(configs.device)
 
     # test best model
-    test_stats = val_loop(val_dataloader, image_model, xrd_model, model)
+    test_stats = val_loop(
+        val_dataloader,
+        image_model,
+        xrd_model,
+        model,
+        use_logit_masking=configs.use_logit_masking_baseline,
+        use_fake_token=configs.use_fake_token_baseline,
+    )
     print(f"test acc: {test_stats['val_acc']*100:.2f}%, test loss: {test_stats['val_loss']:.4f}")
 
     mlflow.log_metrics(test_stats, step=configs.epochs)

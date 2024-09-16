@@ -6,13 +6,10 @@ import zipfile
 
 import numpy as np
 import pandas as pd
-
-# import scipy
+import scipy
 import torch
 from PIL import Image
 from torch.utils.data import Dataset
-
-# from torchvision.transforms import v2
 
 COLS = "?,??,TwoTheta,Theta,Intensity"
 ## interpolation constants
@@ -48,15 +45,45 @@ class RandomNoiseTransform:
         return data + noise
 
 
+class PeakHeightShiftTransform:
+    def __init__(self, shift_scale=0.1):
+        self.shift_scale = shift_scale
+        self.prominence = 0.025
+        self.norm_len = 15
+        self.norm_scale = 0.5
+
+        rv = scipy.stats.norm(scale=self.norm_scale)
+        x = np.linspace(rv.ppf(0.01), rv.ppf(0.99), self.norm_len)
+        self.shift = rv.pdf(x)
+
+    def __call__(self, data):
+
+        # squeeze data
+        data = data.squeeze()
+
+        # find peaks
+        index_data, _ = scipy.signal.find_peaks(np.array(data), prominence=self.prominence)
+        for loc in index_data:
+            # add shift to signal at index data location
+            # take the chunk and multiply by shift value so we "scale" shift by the peak height
+            chunk = data[loc - math.floor(self.norm_len / 2) : loc + math.ceil(self.norm_len / 2)]
+            chunk *= self.shift * np.random.normal(0, self.shift_scale)
+
+            data[loc - math.floor(self.norm_len / 2) : loc + math.ceil(self.norm_len / 2)] += chunk
+
+        # unsqueeze data to original form
+        data = data[np.newaxis, :]
+
+        return data
+
+
 class Normalize:
     def __init__(self):
         self.xpts = np.linspace(X_MIN, X_MAX, NUM_POINTS)
 
     def __call__(self, data):
-        auc = np.trapz(data, self.xpts)
-        data = data / auc
-        print(np.trapz(data, self.xpts))
-        return data
+        auc = np.trapz(data, self.xpts).astype(np.float32)
+        return data / auc
 
 
 def XRDtoPDF(xrd, min_angle, max_angle):
@@ -149,7 +176,7 @@ def read_txt(filename) -> pd.DataFrame:
                 names=["TwoTheta", "Intensity", "x"],
             )
             data = data.drop(columns=["x"])
-            print(data.head())
+            # print(data.head())
 
         elif "[°2Th.]" in first_line:
             data = pd.read_csv(
@@ -252,65 +279,86 @@ class PairedDataset(torch.utils.data.Dataset):
         return f"PairedDataset: {self.split} split with {self.__len__()} samples"
 
 
-# if __name__ == "__main__":
-#     import random
+if __name__ == "__main__":
+    import random
 
-#     import matplotlib.pyplot as plt
+    import matplotlib.pyplot as plt
+    import scipy
+    from scipy.stats import norm
+    from torchvision.transforms import v2
 
-#     xrd_transform = v2.Compose([torch.from_numpy, RandomNoiseTransform(noise_level=0.002), Normalize()])
+    xrd_transform = v2.Compose(
+        [torch.from_numpy, PeakHeightShiftTransform(), RandomNoiseTransform(noise_level=0.002), Normalize()]
+    )
 
-#     train_dataset = PairedDataset(
-#         root="/scratch_nvme/jakobj/nfs/paired-xrd-sem",
-#         split="train",
-#         xrd_transform=xrd_transform,
-#         mode="xrd",
-#     )
-#     val_dataset = PairedDataset(
-#         root="/scratch_nvme/jakobj/nfs/paired-xrd-sem",
-#         split="val",
-#         xrd_transform=torch.from_numpy,
-#         mode="xrd",
-#     )
+    train_dataset = PairedDataset(
+        root="/scratch_nvme/jakobj/nfs/paired-xrd-sem",
+        split="train",
+        xrd_transform=xrd_transform,
+        mode="xrd",
+    )
+    val_dataset = PairedDataset(
+        root="/scratch_nvme/jakobj/nfs/paired-xrd-sem",
+        split="val",
+        xrd_transform=torch.from_numpy,
+        mode="xrd",
+    )
 
-#     train_sample = train_dataset[random.randint(0, len(train_dataset))][0].numpy()
+    train_sample = train_dataset[48][0].numpy()
 
-#     # plt.plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), train_sample.squeeze())
-#     # plt.savefig("realspace.png")
-#     # plt.clf()
+    plt.plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), train_sample.squeeze())
+    plt.savefig("peaks.png")
+    plt.clf()
 
-#     def plot_peaks(time, signal, prominence=None):
-#         index_data, _ = scipy.signal.find_peaks(np.array(signal), prominence=prominence)
-#         print(index_data[0])
-#         plt.plot(time, signal)
-#         plt.plot(
-#             time[index_data],
-#             signal[index_data],
-#             alpha=0.5,
-#             marker="o",
-#             mec="r",
-#             ms=9,
-#             ls=":",
-#             label="%d %s" % (index_data[0].size - 1, "Peaks"),
-#         )
-#         plt.legend(loc="best", framealpha=0.5, numpoints=1)
-#         plt.xlabel("Time(s)", fontsize=14)
-#         plt.ylabel("Amplitude", fontsize=14)
+#     # def plot_peaks(time, signal, prominence=None):
+#     #     index_data, _ = scipy.signal.find_peaks(np.array(signal), prominence=prominence)
+#     #     print(index_data[0])
+#     #     plt.plot(time, signal)
+#     #     plt.plot(
+#     #         time[index_data],
+#     #         signal[index_data],
+#     #         alpha=0.5,
+#     #         marker="o",
+#     #         mec="r",
+#     #         ms=9,
+#     #         ls=":",
+#     #         label="%d %s" % (index_data[0].size - 1, "Peaks"),
+#     #     )
+#     #     plt.legend(loc="best", framealpha=0.5, numpoints=1)
+#     #     plt.xlabel("Time(s)", fontsize=14)
+#     #     plt.ylabel("Amplitude", fontsize=14)
 
-#         plt.savefig("peaks.png")
-#         plt.clf()
+#     #     plt.savefig("peaks-raw.png")
+#     #     plt.clf()
 
-#     plot_peaks(np.linspace(X_MIN, X_MAX, NUM_POINTS), train_sample.squeeze(), prominence=0.025)
+#     #     # generate a normal distribution pdf
+#     #     LEN_SHIFT = 15
+#     #     rv = norm(scale=0.5)
+#     #     x = np.linspace(rv.ppf(0.01), rv.ppf(0.99), 15)
+#     #     shift = rv.pdf(x) * 0.1
 
-#     # plt.plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), train_sample.squeeze())
-#     # plt.savefig("realspace-2.png")
-#     # plt.clf()
+#     #     print(LEN_SHIFT // 2)
 
-#     # R, pdf = XRDtoPDF(train_sample, 10, 70)
+#     #     for loc in index_data:
+#     #         # add shift to signal at index data location
+#     #         signal[loc - math.floor(LEN_SHIFT / 2) : loc + math.ceil(LEN_SHIFT / 2)] += shift
 
-#     # plt.plot(R, pdf)
-#     # plt.savefig("pdf.png")
+#     #     plt.plot(time, signal)
+#     #     plt.plot(
+#     #         time[index_data],
+#     #         signal[index_data],
+#     #         alpha=0.5,
+#     #         marker="o",
+#     #         mec="r",
+#     #         ms=9,
+#     #         ls=":",
+#     #         label="%d %s" % (index_data[0].size - 1, "Peaks"),
+#     #     )
+#     #     plt.legend(loc="best", framealpha=0.5, numpoints=1)
+#     #     plt.xlabel("Time(s)", fontsize=14)
+#     #     plt.ylabel("Amplitude", fontsize=14)
 
-#     # val_sample = val_dataset[0][0]
+#     #     plt.savefig("peaks-changed.png")
+#     #     plt.clf()
 
-#     # print(train_sample.shape, val_sample.shape)
-#     # print(torch.sum(train_sample), torch.sum(val_sample))
+#     # plot_peaks(np.linspace(X_MIN, X_MAX, NUM_POINTS), train_sample.squeeze(), prominence=0.025)
