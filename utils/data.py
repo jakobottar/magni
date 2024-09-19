@@ -93,16 +93,21 @@ class ImageFolderDataset(torch.utils.data.Dataset):
         transform (callable, optional): Optional transform to be applied to a sample
     """
 
-    def __init__(self, split: str, root_dir: str, transform=None):
-        self.root_dir = root_dir
+    def __init__(self, split: str, root_dir: str, transform=None, fold_num: int = 1):
+        self.dirpath = root_dir
         self.transform = transform
-        self.dirpath = os.path.join(self.root_dir, split)
 
         # load dataset metadata file
         try:
             self.df = pd.read_csv(os.path.join(self.dirpath, "metadata.csv"))
         except FileNotFoundError as exc:
             raise FileNotFoundError(f"Dataset {self.dirpath} does not exist, make sure it has been built.") from exc
+
+        # filter metadata by fold number
+        if split == "train":
+            self.df = self.df[self.df["fold"] != fold_num]
+        else:
+            self.df = self.df[self.df["fold"] == fold_num]
 
     def __len__(self):
         return len(self.df)
@@ -214,11 +219,13 @@ def get_datasets(configs) -> dict:
 
             id_datasets["train"] = ImageFolderDataset(
                 split="train",
+                fold_num=configs.fold_num,
                 root_dir=configs.dataset_root,
                 transform=transforms["train"],
             )
             id_datasets["val"] = ImageFolderDataset(
                 split="val",
+                fold_num=configs.fold_num,
                 root_dir=configs.dataset_root,
                 transform=transforms["val"],
             )
@@ -230,12 +237,14 @@ def get_datasets(configs) -> dict:
             id_datasets["train"] = PairedDataset(
                 root=configs.dataset_root,
                 split="train",
+                fold_num=configs.fold_num,
                 sem_transform=transforms["train"],
                 mode="sem",
             )
             id_datasets["val"] = PairedDataset(
                 root=configs.dataset_root,
                 split="val",
+                fold_num=configs.fold_num,
                 sem_transform=transforms["val"],
                 mode="sem",
             )
@@ -256,12 +265,14 @@ def get_datasets(configs) -> dict:
             id_datasets["train"] = PairedDataset(
                 root=configs.dataset_root,
                 split="train",
+                fold_num=configs.fold_num,
                 xrd_transform=xrd_transform,
                 mode="xrd",
             )
             id_datasets["val"] = PairedDataset(
                 root=configs.dataset_root,
                 split="val",
+                fold_num=configs.fold_num,
                 xrd_transform=torch.from_numpy,
                 mode="xrd",
             )

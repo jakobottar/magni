@@ -219,7 +219,15 @@ def process_xrd_data(data: pd.DataFrame) -> pd.DataFrame:
 
 
 class PairedDataset(torch.utils.data.Dataset):
-    def __init__(self, root: str, split: str = "train", sem_transform=None, xrd_transform=None, mode="paired"):
+    def __init__(
+        self,
+        root: str,
+        split: str = "train",
+        fold_num: int = 1,
+        sem_transform=None,
+        xrd_transform=None,
+        mode: str = "paired",
+    ):
         self.root = root
         self.split = split
         self.sem_transform = sem_transform
@@ -228,9 +236,15 @@ class PairedDataset(torch.utils.data.Dataset):
 
         # load dataset metadata file
         try:
-            self.df = pd.read_csv(os.path.join(self.root, split, "metadata.csv"))
+            self.df = pd.read_csv(os.path.join(self.root, "metadata.csv"))
         except FileNotFoundError as exc:
             raise FileNotFoundError(f"Dataset {self.root} does not exist, make sure it has been built.") from exc
+
+        # filter metadata by fold number
+        if split == "train":
+            self.df = self.df[self.df["fold"] != fold_num]
+        else:
+            self.df = self.df[self.df["fold"] == fold_num]
 
         if self.mode == "paired":
             # convert route to label
@@ -256,11 +270,11 @@ class PairedDataset(torch.utils.data.Dataset):
 
         # get sample
         if self.mode == "paired" or self.mode == "sem":
-            sem = Image.open(os.path.join(self.root, self.split, sample["sem_file"])).convert("RGB")
+            sem = Image.open(os.path.join(self.root, sample["sem_file"])).convert("RGB")
             if self.sem_transform:
                 sem = self.sem_transform(sem)
         if self.mode == "paired" or self.mode == "xrd":
-            xrd = np.load(os.path.join(self.root, self.split, sample["xrd_file"]))
+            xrd = np.load(os.path.join(self.root, sample["xrd_file"]))
             if self.xrd_transform:
                 xrd = self.xrd_transform(xrd)
 

@@ -41,7 +41,7 @@ def parse_configs():
     parser.add_argument("-r", "--dataset-root", type=str, default="./data/", help="dataset filepath")
     parser.add_argument("--device", type=str, default="cuda", help="gpu(s) to use")
     parser.add_argument("-e", "--epochs", type=int, default=1, help="number of epochs to train for")
-    parser.add_argument("--fold-num", type=int, default=0, help="fold number for cross-validation")
+    parser.add_argument("--fold-num", type=int, default=1, help="fold number for cross-validation")
     parser.add_argument("--lr", type=float, default=1.0, help="learning rate")
     parser.add_argument("--momentum", type=float, default=0.9, help="optimizer momentum")
     parser.add_argument("--multiplier", type=int, default=1, help="batch multiplier for SimCLR")
