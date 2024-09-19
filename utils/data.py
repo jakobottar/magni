@@ -247,7 +247,7 @@ def get_datasets(configs) -> dict:
             xrd_transform = v2.Compose(
                 [
                     torch.from_numpy,
-                    # PeakHeightShiftTransform(shift_scale=0.15),
+                    PeakHeightShiftTransform(shift_scale=0.15),
                     RandomNoiseTransform(noise_level=0.002),
                     Normalize(),
                 ]
@@ -273,7 +273,7 @@ def get_datasets(configs) -> dict:
             xrd_transform = v2.Compose(
                 [
                     torch.from_numpy,
-                    # PeakHeightShiftTransform(shift_scale=0.15),
+                    PeakHeightShiftTransform(shift_scale=0.15),
                     RandomNoiseTransform(noise_level=0.002),
                     Normalize(),
                 ]
