@@ -293,6 +293,7 @@ def get_datasets(configs) -> dict:
             id_datasets["train"] = PairedDataset(
                 root=configs.dataset_root,
                 split="train",
+                fold_num=configs.fold_num,
                 sem_transform=transforms["train"],
                 xrd_transform=xrd_transform,
                 mode="paired",
@@ -300,6 +301,7 @@ def get_datasets(configs) -> dict:
             id_datasets["val"] = PairedDataset(
                 root=configs.dataset_root,
                 split="val",
+                fold_num=configs.fold_num,
                 sem_transform=transforms["val"],
                 xrd_transform=torch.from_numpy,
                 mode="paired",
