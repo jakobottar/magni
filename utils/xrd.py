@@ -4,11 +4,15 @@ import os
 import xml.etree.ElementTree as ET
 import zipfile
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import scipy
 import torch
+from mp_api.client import MPRester
 from PIL import Image
+from pymatgen.analysis.diffraction.xrd import XRDCalculator
+from pymatgen.core import IStructure, Lattice, Structure
 from torch.utils.data import Dataset
 
 COLS = "?,??,TwoTheta,Theta,Intensity"
@@ -16,6 +20,11 @@ COLS = "?,??,TwoTheta,Theta,Intensity"
 X_MIN = 10
 X_MAX = 70
 NUM_POINTS = 4096
+
+# for synthetic data
+FWHM = 0.1
+SIGMA = FWHM * 0.42463  # 1/(2*sqrt(2*ln2))=0.42463
+OMEGA = 0.001
 
 ROUTES = [
     "U3O8AUC",
@@ -197,6 +206,53 @@ def read_txt(filename) -> pd.DataFrame:
     return data
 
 
+def generate_synthetic_xrd(material: str, source: str = "cif") -> pd.DataFrame:
+
+    if source == "cif":
+        filename = f"data/{material}.cif"
+        structure = Structure.from_file(filename, primitive=False, sort=False, merge_tol=0.0)
+
+    elif source == "mp":
+        raise NotImplementedError("Not implemented yet")
+        with MPRester() as mpr:
+            structure = mpr.get_structure_by_material_id(material)
+
+    xrd = XRDCalculator(wavelength="CuKa", symprec=1.0)  # initiate XRD calculator (can specify various options here)
+
+    pattern = xrd.get_pattern(structure)
+
+    # spread out the peaks using a gaussian distribution
+    # https://github.com/Ying-Ying-Zhang/xrd_plot/blob/main/xrd_plot.py
+
+    a = 1 / (SIGMA * np.sqrt(2 * np.pi))
+    x = np.linspace(X_MIN, X_MAX, num=NUM_POINTS, endpoint=True)
+
+    def spectrum(x, y, sigma, x_range):
+        gE = []
+        for xi in x_range:
+            tot = 0
+            for xj, o in zip(x, y):
+                L = (FWHM / (2 * np.pi)) * (1 / ((xj - xi) ** 2 + 0.25 * FWHM**2))
+                G = a * np.exp(-((xj - xi) ** 2) / (2 * sigma**2))
+                P = OMEGA * G + (1 - OMEGA) * L
+                tot += o * P
+                # tot+=o*np.exp(-((((xj-xi)/sigma)**2)))
+            gE.append(tot)
+        return gE
+
+    intensity = spectrum(pattern.x, pattern.y, SIGMA, x)
+
+    # convert to standard pd dataframe
+    df = pd.DataFrame(
+        {
+            "TwoTheta": x,
+            "Intensity": intensity,
+        }
+    )
+
+    return df
+
+
 def process_xrd_data(data: pd.DataFrame) -> pd.DataFrame:
 
     ## subtract the minimum intensity from all intensities
@@ -294,35 +350,14 @@ class PairedDataset(torch.utils.data.Dataset):
 
 
 if __name__ == "__main__":
-    import random
+    # test synthetic data generation
+    for material in ["U3O8", "UO2", "UO3"]:
+        train_sample = generate_synthetic_xrd(material)
+        train_sample = process_xrd_data(train_sample)
 
-    import matplotlib.pyplot as plt
-    import scipy
-    from scipy.stats import norm
-    from torchvision.transforms import v2
-
-    xrd_transform = v2.Compose(
-        [torch.from_numpy, PeakHeightShiftTransform(), RandomNoiseTransform(noise_level=0.002), Normalize()]
-    )
-
-    train_dataset = PairedDataset(
-        root="/scratch_nvme/jakobj/nfs/paired-xrd-sem",
-        split="train",
-        xrd_transform=xrd_transform,
-        mode="xrd",
-    )
-    val_dataset = PairedDataset(
-        root="/scratch_nvme/jakobj/nfs/paired-xrd-sem",
-        split="val",
-        xrd_transform=torch.from_numpy,
-        mode="xrd",
-    )
-
-    train_sample = train_dataset[48][0].numpy()
-
-    plt.plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), train_sample.squeeze())
-    plt.savefig("peaks.png")
-    plt.clf()
+        plt.plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), train_sample["Intensity"])
+        plt.savefig(f"{material}.png")
+        plt.clf()
 
 #     # def plot_peaks(time, signal, prominence=None):
 #     #     index_data, _ = scipy.signal.find_peaks(np.array(signal), prominence=prominence)

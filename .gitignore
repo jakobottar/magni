@@ -11,6 +11,7 @@ tmp/
 *.brml
 *.png
 *.txt 
+*.cif
 data/
 
 # vscode files
