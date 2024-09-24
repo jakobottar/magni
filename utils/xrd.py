@@ -22,7 +22,7 @@ X_MAX = 70
 NUM_POINTS = 4096
 
 # for synthetic data
-FWHM = 0.1
+FWHM = 0.2
 SIGMA = FWHM * 0.42463  # 1/(2*sqrt(2*ln2))=0.42463
 OMEGA = 0.001
 
@@ -218,13 +218,13 @@ def generate_synthetic_xrd(
         structure = Structure.from_file(filename, primitive=False, sort=False, merge_tol=0.0)
 
     elif source == "mp":
-        raise NotImplementedError("Not implemented yet")
+        raise NotImplementedError("Not implemented yet")  # TODO: implement this
         with MPRester() as mpr:
             structure = mpr.get_structure_by_material_id(material)
 
     xrd = XRDCalculator(wavelength="CuKa", symprec=1.0)  # initiate XRD calculator (can specify various options here)
 
-    pattern = xrd.get_pattern(structure)
+    pattern = xrd.get_pattern(structure, scaled=False, two_theta_range=(X_MIN, X_MAX))
 
     if peak_pos_shift:
         # shift the peak positions using a gaussian distribution
@@ -282,9 +282,13 @@ def process_xrd_data(data: pd.DataFrame) -> pd.DataFrame:
     data = pd.DataFrame({"TwoTheta": x, "Intensity": y})
 
     ## normalize the intensity by integrating the area under the curve
-    data["Intensity"] = data["Intensity"] / data["Intensity"].sum()
+    # data["Intensity"] = data["Intensity"] / data["Intensity"].sum()
 
     return data
+
+
+def df_2_np(df: pd.DataFrame) -> np.ndarray:
+    return np.array(df["Intensity"])
 
 
 class PairedDataset(torch.utils.data.Dataset):
@@ -295,12 +299,14 @@ class PairedDataset(torch.utils.data.Dataset):
         fold_num: int = 1,
         sem_transform=None,
         xrd_transform=None,
+        synthetic_xrd: bool = False,
         mode: str = "paired",
     ):
         self.root = root
         self.split = split
         self.sem_transform = sem_transform
         self.xrd_transform = xrd_transform
+        self.synthetic_xrd = synthetic_xrd
         self.mode = mode  # can be 'paired', 'sem', 'xrd'
 
         # load dataset metadata file
@@ -342,8 +348,14 @@ class PairedDataset(torch.utils.data.Dataset):
             sem = Image.open(os.path.join(self.root, sample["sem_file"])).convert("RGB")
             if self.sem_transform:
                 sem = self.sem_transform(sem)
+
         if self.mode == "paired" or self.mode == "xrd":
-            xrd = np.load(os.path.join(self.root, sample["xrd_file"]))
+            if self.synthetic_xrd:
+                xrd = generate_synthetic_xrd(sample["finalmat"], root=self.root, peak_pos_shift=True)
+                xrd = df_2_np(process_xrd_data(xrd))
+            else:
+                xrd = np.load(os.path.join(self.root, sample["xrd_file"]))
+
             if self.xrd_transform:
                 xrd = self.xrd_transform(xrd)
 
@@ -363,64 +375,30 @@ class PairedDataset(torch.utils.data.Dataset):
 
 
 if __name__ == "__main__":
-    # test synthetic data generation
-    for material in ["U3O8", "UO2", "UO3"]:
-        train_sample = generate_synthetic_xrd(material, peak_pos_shift=True)
-        train_sample = process_xrd_data(train_sample)
+    import matplotlib.pyplot as plt
+    import scipy
+    from torchvision.transforms import v2
 
-        plt.plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), train_sample["Intensity"])
-        plt.savefig(f"{material}.png")
-        plt.clf()
+    xrd_transform = v2.Compose(
+        [torch.from_numpy, Normalize(), PeakHeightShiftTransform(), RandomNoiseTransform(noise_level=0.002)]
+    )
 
-#     # def plot_peaks(time, signal, prominence=None):
-#     #     index_data, _ = scipy.signal.find_peaks(np.array(signal), prominence=prominence)
-#     #     print(index_data[0])
-#     #     plt.plot(time, signal)
-#     #     plt.plot(
-#     #         time[index_data],
-#     #         signal[index_data],
-#     #         alpha=0.5,
-#     #         marker="o",
-#     #         mec="r",
-#     #         ms=9,
-#     #         ls=":",
-#     #         label="%d %s" % (index_data[0].size - 1, "Peaks"),
-#     #     )
-#     #     plt.legend(loc="best", framealpha=0.5, numpoints=1)
-#     #     plt.xlabel("Time(s)", fontsize=14)
-#     #     plt.ylabel("Amplitude", fontsize=14)
+    train_dataset = PairedDataset(
+        root="/scratch_nvme/jakobj/nfs/paired-xrd-sem",
+        split="train",
+        xrd_transform=xrd_transform,
+        synthetic_xrd=True,
+        mode="xrd",
+    )
+    val_dataset = PairedDataset(
+        root="/scratch_nvme/jakobj/nfs/paired-xrd-sem",
+        split="val",
+        xrd_transform=torch.from_numpy,
+        mode="xrd",
+    )
 
-#     #     plt.savefig("peaks-raw.png")
-#     #     plt.clf()
+    train_sample = train_dataset[17][0].numpy()
 
-#     #     # generate a normal distribution pdf
-#     #     LEN_SHIFT = 15
-#     #     rv = norm(scale=0.5)
-#     #     x = np.linspace(rv.ppf(0.01), rv.ppf(0.99), 15)
-#     #     shift = rv.pdf(x) * 0.1
-
-#     #     print(LEN_SHIFT // 2)
-
-#     #     for loc in index_data:
-#     #         # add shift to signal at index data location
-#     #         signal[loc - math.floor(LEN_SHIFT / 2) : loc + math.ceil(LEN_SHIFT / 2)] += shift
-
-#     #     plt.plot(time, signal)
-#     #     plt.plot(
-#     #         time[index_data],
-#     #         signal[index_data],
-#     #         alpha=0.5,
-#     #         marker="o",
-#     #         mec="r",
-#     #         ms=9,
-#     #         ls=":",
-#     #         label="%d %s" % (index_data[0].size - 1, "Peaks"),
-#     #     )
-#     #     plt.legend(loc="best", framealpha=0.5, numpoints=1)
-#     #     plt.xlabel("Time(s)", fontsize=14)
-#     #     plt.ylabel("Amplitude", fontsize=14)
-
-#     #     plt.savefig("peaks-changed.png")
-#     #     plt.clf()
-
-#     # plot_peaks(np.linspace(X_MIN, X_MAX, NUM_POINTS), train_sample.squeeze(), prominence=0.025)
+    plt.plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), train_sample.squeeze())
+    plt.savefig("peaks2.png")
+    plt.clf()
