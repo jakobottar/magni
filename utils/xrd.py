@@ -1,6 +1,7 @@
 import io
 import math
 import os
+import warnings
 import xml.etree.ElementTree as ET
 import zipfile
 
@@ -21,10 +22,13 @@ X_MIN = 10
 X_MAX = 70
 NUM_POINTS = 4096
 
+# cloudy-lemon-birman
+
 # for synthetic data
 FWHM = 0.2
 SIGMA = FWHM * 0.42463  # 1/(2*sqrt(2*ln2))=0.42463
 OMEGA = 0.001
+SHIFT_SIGMA = 0.05
 
 ROUTES = [
     "U3O8AUC",
@@ -76,7 +80,16 @@ class PeakHeightShiftTransform:
             # add shift to signal at index data location
             # take the chunk and multiply by shift value so we "scale" shift by the peak height
             chunk = data[loc - math.floor(self.norm_len / 2) : loc + math.ceil(self.norm_len / 2)]
-            chunk *= self.shift * np.random.normal(0, self.shift_scale)
+
+            # handle out of bounds cases
+            if loc + math.ceil(self.norm_len / 2) > len(data):
+                shift_copy = self.shift[: len(chunk)]
+                chunk *= shift_copy * np.random.normal(0, self.shift_scale)
+            elif loc - math.floor(self.norm_len / 2) < 0:
+                shift_copy = self.shift[-len(chunk) :]
+                chunk *= shift_copy * np.random.normal(0, self.shift_scale)
+            else:
+                chunk *= self.shift * np.random.normal(0, self.shift_scale)
 
             data[loc - math.floor(self.norm_len / 2) : loc + math.ceil(self.norm_len / 2)] += chunk
 
@@ -206,89 +219,98 @@ def read_txt(filename) -> pd.DataFrame:
     return data
 
 
-def generate_synthetic_xrd(
-    material: str,
-    root: str = "data",
-    source: str = "cif",
-    peak_pos_shift: bool = False,
-) -> pd.DataFrame:
+class SyntheticXRDGenerator:
+    def __init__(self, root: str = "data", source: str = "cif", peak_pos_shift: bool = False) -> None:
 
-    if source == "cif":
-        filename = os.path.join(root, f"{material}.cif")
-        structure = Structure.from_file(filename, primitive=False, sort=False, merge_tol=0.0)
+        self.root = root
+        self.source = source
+        self.peak_pos_shift = peak_pos_shift
+        self.pattern_cache = {}
 
-    elif source == "mp":
-        raise NotImplementedError("Not implemented yet")  # TODO: implement this
-        with MPRester() as mpr:
-            structure = mpr.get_structure_by_material_id(material)
+    def process_xrd_data(self, data: pd.DataFrame) -> pd.DataFrame:
 
-    xrd = XRDCalculator(wavelength="CuKa", symprec=1.0)  # initiate XRD calculator (can specify various options here)
+        ## subtract the minimum intensity from all intensities
+        data["Intensity"] = data["Intensity"] - data["Intensity"].min()
 
-    pattern = xrd.get_pattern(structure, scaled=False, two_theta_range=(X_MIN, X_MAX))
+        ## drop datapoints greather than 70 degrees or less than 10 degrees
+        data = data[(data["TwoTheta"] >= 10) & (data["TwoTheta"] <= 70)]
 
-    if peak_pos_shift:
-        # shift the peak positions using a gaussian distribution
-        SHIFT_SIGMA = 1
-        pattern.x += np.random.normal(0, SHIFT_SIGMA, len(pattern.x))
+        ## interpolate the data to match a standard range of 10 to 90 degrees
+        x = np.linspace(X_MIN, X_MAX, NUM_POINTS)  # delta of 0.1953125 degrees
+        y = np.interp(x, data["TwoTheta"], data["Intensity"])
 
-    # spread out the peaks using a gaussian distribution
-    # https://github.com/Ying-Ying-Zhang/xrd_plot/blob/main/xrd_plot.py
+        # copy data to new dataframe
+        data = pd.DataFrame({"TwoTheta": x, "Intensity": y})
 
-    a = 1 / (SIGMA * np.sqrt(2 * np.pi))
-    x = np.linspace(X_MIN, X_MAX, num=NUM_POINTS, endpoint=True)
+        ## normalize the intensity by integrating the area under the curve
+        # data["Intensity"] = data["Intensity"] / data["Intensity"].sum()
 
-    def spectrum(x, y, x_range):
-        gE = []
-        for xi in x_range:
-            tot = 0
-            for xj, o in zip(x, y):
-                # ignore peaks too far out of range
-                if abs(xj - xi) > 5:
-                    continue
+        return data
 
-                L = (FWHM / (2 * np.pi)) * (1 / ((xj - xi) ** 2 + 0.25 * FWHM**2))
-                G = a * np.exp(-((xj - xi) ** 2) / (2 * SIGMA**2))
-                P = OMEGA * G + (1 - OMEGA) * L
-                tot += o * P
-            gE.append(tot)
-        return gE
+    def df_2_np(self, df: pd.DataFrame) -> np.ndarray:
+        return np.array(df["Intensity"]).astype(np.float32)
 
-    intensity = spectrum(pattern.x, pattern.y, x)
+    def generate_synthetic_xrd(self, material: str) -> pd.DataFrame:
 
-    # convert to standard pd dataframe
-    df = pd.DataFrame(
-        {
-            "TwoTheta": x,
-            "Intensity": intensity,
-        }
-    )
+        if material in self.pattern_cache.keys():
+            intensity = self.pattern_cache[material]
+            x = np.linspace(X_MIN, X_MAX, num=NUM_POINTS, endpoint=True)
 
-    return df
+        else:
+            if self.source == "cif":
+                filename = os.path.join(self.root, f"{material}.cif")
+                structure = Structure.from_file(filename, primitive=False, sort=False, merge_tol=0.0)
 
+            elif self.source == "mp":
+                raise NotImplementedError("Not implemented yet")  # TODO: implement this
+                with MPRester() as mpr:
+                    structure = mpr.get_structure_by_material_id(material)
 
-def process_xrd_data(data: pd.DataFrame) -> pd.DataFrame:
+            xrd = XRDCalculator(
+                wavelength="CuKa", symprec=1.0
+            )  # initiate XRD calculator (can specify various options here)
 
-    ## subtract the minimum intensity from all intensities
-    data["Intensity"] = data["Intensity"] - data["Intensity"].min()
+            pattern = xrd.get_pattern(structure, scaled=False, two_theta_range=(X_MIN, X_MAX))
 
-    ## drop datapoints greather than 70 degrees or less than 10 degrees
-    data = data[(data["TwoTheta"] >= 10) & (data["TwoTheta"] <= 70)]
+            if self.peak_pos_shift:
+                # shift the peak positions using a gaussian distribution
+                pattern.x += np.random.normal(0, SHIFT_SIGMA, len(pattern.x))
 
-    ## interpolate the data to match a standard range of 10 to 90 degrees
-    x = np.linspace(X_MIN, X_MAX, NUM_POINTS)  # delta of 0.1953125 degrees
-    y = np.interp(x, data["TwoTheta"], data["Intensity"])
+            # spread out the peaks using a gaussian distribution
+            # https://github.com/Ying-Ying-Zhang/xrd_plot/blob/main/xrd_plot.py
 
-    # copy data to new dataframe
-    data = pd.DataFrame({"TwoTheta": x, "Intensity": y})
+            a = 1 / (SIGMA * np.sqrt(2 * np.pi))
+            x = np.linspace(X_MIN, X_MAX, num=NUM_POINTS, endpoint=True)
 
-    ## normalize the intensity by integrating the area under the curve
-    # data["Intensity"] = data["Intensity"] / data["Intensity"].sum()
+            def spectrum(x, y, x_range):
+                gE = []
+                for xi in x_range:
+                    tot = 0
+                    for xj, o in zip(x, y):
+                        # ignore peaks too far out of range
+                        if abs(xj - xi) > 10:
+                            continue
 
-    return data
+                        L = (FWHM / (2 * np.pi)) * (1 / ((xj - xi) ** 2 + 0.25 * FWHM**2))
+                        G = a * np.exp(-((xj - xi) ** 2) / (2 * SIGMA**2))
+                        P = OMEGA * G + (1 - OMEGA) * L
+                        tot += o * P
+                    gE.append(tot)
+                return gE
 
+            intensity = spectrum(pattern.x, pattern.y, x)
 
-def df_2_np(df: pd.DataFrame) -> np.ndarray:
-    return np.array(df["Intensity"])
+            self.pattern_cache[material] = intensity
+
+        # convert to standard pd dataframe
+        df = pd.DataFrame(
+            {
+                "TwoTheta": x,
+                "Intensity": intensity,
+            }
+        )
+
+        return self.df_2_np(self.process_xrd_data(df))
 
 
 class PairedDataset(torch.utils.data.Dataset):
@@ -307,6 +329,8 @@ class PairedDataset(torch.utils.data.Dataset):
         self.sem_transform = sem_transform
         self.xrd_transform = xrd_transform
         self.synthetic_xrd = synthetic_xrd
+        if synthetic_xrd:
+            self.synxrd = SyntheticXRDGenerator(root=root, peak_pos_shift=False)
         self.mode = mode  # can be 'paired', 'sem', 'xrd'
 
         # load dataset metadata file
@@ -351,8 +375,7 @@ class PairedDataset(torch.utils.data.Dataset):
 
         if self.mode == "paired" or self.mode == "xrd":
             if self.synthetic_xrd:
-                xrd = generate_synthetic_xrd(sample["finalmat"], root=self.root, peak_pos_shift=True)
-                xrd = df_2_np(process_xrd_data(xrd))
+                xrd = self.synxrd.generate_synthetic_xrd(material=sample["finalmat"])
             else:
                 xrd = np.load(os.path.join(self.root, sample["xrd_file"]))
 
@@ -380,7 +403,12 @@ if __name__ == "__main__":
     from torchvision.transforms import v2
 
     xrd_transform = v2.Compose(
-        [torch.from_numpy, Normalize(), PeakHeightShiftTransform(), RandomNoiseTransform(noise_level=0.002)]
+        [
+            torch.from_numpy,
+            Normalize(),
+            PeakHeightShiftTransform(shift_scale=0.15),
+            RandomNoiseTransform(noise_level=0.005),
+        ]
     )
 
     train_dataset = PairedDataset(
@@ -397,7 +425,7 @@ if __name__ == "__main__":
         mode="xrd",
     )
 
-    train_sample = train_dataset[17][0].numpy()
+    train_sample = train_dataset[18][0].numpy()
 
     plt.plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), train_sample.squeeze())
     plt.savefig("peaks2.png")
