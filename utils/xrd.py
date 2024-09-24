@@ -206,10 +206,15 @@ def read_txt(filename) -> pd.DataFrame:
     return data
 
 
-def generate_synthetic_xrd(material: str, source: str = "cif") -> pd.DataFrame:
+def generate_synthetic_xrd(
+    material: str,
+    root: str = "data",
+    source: str = "cif",
+    peak_pos_shift: bool = False,
+) -> pd.DataFrame:
 
     if source == "cif":
-        filename = f"data/{material}.cif"
+        filename = os.path.join(root, f"{material}.cif")
         structure = Structure.from_file(filename, primitive=False, sort=False, merge_tol=0.0)
 
     elif source == "mp":
@@ -221,26 +226,34 @@ def generate_synthetic_xrd(material: str, source: str = "cif") -> pd.DataFrame:
 
     pattern = xrd.get_pattern(structure)
 
+    if peak_pos_shift:
+        # shift the peak positions using a gaussian distribution
+        SHIFT_SIGMA = 1
+        pattern.x += np.random.normal(0, SHIFT_SIGMA, len(pattern.x))
+
     # spread out the peaks using a gaussian distribution
     # https://github.com/Ying-Ying-Zhang/xrd_plot/blob/main/xrd_plot.py
 
     a = 1 / (SIGMA * np.sqrt(2 * np.pi))
     x = np.linspace(X_MIN, X_MAX, num=NUM_POINTS, endpoint=True)
 
-    def spectrum(x, y, sigma, x_range):
+    def spectrum(x, y, x_range):
         gE = []
         for xi in x_range:
             tot = 0
             for xj, o in zip(x, y):
+                # ignore peaks too far out of range
+                if abs(xj - xi) > 5:
+                    continue
+
                 L = (FWHM / (2 * np.pi)) * (1 / ((xj - xi) ** 2 + 0.25 * FWHM**2))
-                G = a * np.exp(-((xj - xi) ** 2) / (2 * sigma**2))
+                G = a * np.exp(-((xj - xi) ** 2) / (2 * SIGMA**2))
                 P = OMEGA * G + (1 - OMEGA) * L
                 tot += o * P
-                # tot+=o*np.exp(-((((xj-xi)/sigma)**2)))
             gE.append(tot)
         return gE
 
-    intensity = spectrum(pattern.x, pattern.y, SIGMA, x)
+    intensity = spectrum(pattern.x, pattern.y, x)
 
     # convert to standard pd dataframe
     df = pd.DataFrame(
@@ -352,7 +365,7 @@ class PairedDataset(torch.utils.data.Dataset):
 if __name__ == "__main__":
     # test synthetic data generation
     for material in ["U3O8", "UO2", "UO3"]:
-        train_sample = generate_synthetic_xrd(material)
+        train_sample = generate_synthetic_xrd(material, peak_pos_shift=True)
         train_sample = process_xrd_data(train_sample)
 
         plt.plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), train_sample["Intensity"])
