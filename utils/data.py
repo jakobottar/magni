@@ -275,6 +275,7 @@ def get_datasets(configs) -> dict:
                 split="val",
                 fold_num=configs.fold_num,
                 xrd_transform=v2.Compose([torch.from_numpy, Normalize()]),
+                synthetic_xrd=False,
                 mode="xrd",
             )
 
@@ -306,6 +307,7 @@ def get_datasets(configs) -> dict:
                 fold_num=configs.fold_num,
                 sem_transform=transforms["val"],
                 xrd_transform=v2.Compose([torch.from_numpy, Normalize()]),
+                synthetic_xrd=False,
                 mode="paired",
             )
 

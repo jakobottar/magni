@@ -262,8 +262,7 @@ class SyntheticXRDGenerator:
                 structure = Structure.from_file(filename, primitive=False, sort=False, merge_tol=0.0)
 
             elif self.source == "mp":
-                raise NotImplementedError("Not implemented yet")  # TODO: implement this
-                with MPRester() as mpr:
+                with MPRester(api_key=os.getenv("MP_API_KEY")) as mpr:
                     structure = mpr.get_structure_by_material_id(material)
 
             xrd = XRDCalculator(
@@ -329,21 +328,23 @@ class PairedDataset(torch.utils.data.Dataset):
         self.sem_transform = sem_transform
         self.xrd_transform = xrd_transform
         self.synthetic_xrd = synthetic_xrd
-        if synthetic_xrd:
-            self.synxrd = SyntheticXRDGenerator(root=root, peak_pos_shift=False)
+        self.synxrd_generator = SyntheticXRDGenerator(root=root, peak_pos_shift=False)
         self.mode = mode  # can be 'paired', 'sem', 'xrd'
 
         # load dataset metadata file
         try:
-            self.df = pd.read_csv(os.path.join(self.root, "metadata.csv"))
+            self.df = pd.read_csv(os.path.join(self.root, self.split, "metadata.csv"))
         except FileNotFoundError as exc:
             raise FileNotFoundError(f"Dataset {self.root} does not exist, make sure it has been built.") from exc
 
+        # filter out uo3 materials
+        self.df = self.df[self.df["finalmat"] != "UO3"]
+
         # filter metadata by fold number
-        if split == "train":
-            self.df = self.df[self.df["fold"] != fold_num]
-        else:
-            self.df = self.df[self.df["fold"] == fold_num]
+        # if split == "train":
+        #     self.df = self.df[self.df["fold"] != fold_num]
+        # else:
+        #     self.df = self.df[self.df["fold"] == fold_num]
 
         if self.mode == "paired":
             # convert route to label
@@ -369,16 +370,18 @@ class PairedDataset(torch.utils.data.Dataset):
 
         # get sample
         if self.mode == "paired" or self.mode == "sem":
-            sem = Image.open(os.path.join(self.root, sample["sem_file"])).convert("RGB")
+            sem = Image.open(os.path.join(self.root, self.split, sample["sem_file"])).convert("RGB")
             if self.sem_transform:
                 sem = self.sem_transform(sem)
 
         if self.mode == "paired" or self.mode == "xrd":
+            # get xrd data
             if self.synthetic_xrd:
                 xrd = self.synxrd.generate_synthetic_xrd(material=sample["finalmat"])
             else:
-                xrd = np.load(os.path.join(self.root, sample["xrd_file"]))
+                xrd = np.load(os.path.join(self.root, self.split, sample["xrd_file"]))
 
+            # apply xrd transform
             if self.xrd_transform:
                 xrd = self.xrd_transform(xrd)
 
@@ -406,27 +409,47 @@ if __name__ == "__main__":
         [
             torch.from_numpy,
             Normalize(),
-            PeakHeightShiftTransform(shift_scale=0.15),
-            RandomNoiseTransform(noise_level=0.005),
+            # PeakHeightShiftTransform(shift_scale=0.15),
+            # RandomNoiseTransform(noise_level=0.005),
         ]
     )
 
-    train_dataset = PairedDataset(
-        root="/scratch_nvme/jakobj/nfs/paired-xrd-sem",
-        split="train",
+    syn_dataset = PairedDataset(
+        root="/usr/sci/scratch_nvme/jakobj/nfs/paired-xrd-sem-2",
+        split="val",
         xrd_transform=xrd_transform,
         synthetic_xrd=True,
         mode="xrd",
     )
-    val_dataset = PairedDataset(
-        root="/scratch_nvme/jakobj/nfs/paired-xrd-sem",
+    real_dataset = PairedDataset(
+        root="/usr/sci/scratch_nvme/jakobj/nfs/paired-xrd-sem-2",
         split="val",
-        xrd_transform=torch.from_numpy,
+        xrd_transform=xrd_transform,
+        synthetic_xrd=False,
         mode="xrd",
     )
 
-    train_sample = train_dataset[18][0].numpy()
+    for i in range(len(syn_dataset)):
+        SAMPLE_IDX = i
+        if syn_dataset.df.iloc[SAMPLE_IDX]["finalmat"] != "UO3":
+            print(f"Skipping {syn_dataset.df.iloc[SAMPLE_IDX]['finalmat']}")
+            continue
+        else:
+            syn_sample = syn_dataset[SAMPLE_IDX][0].numpy()
+            real_sample = real_dataset[SAMPLE_IDX][0].numpy()
 
-    plt.plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), train_sample.squeeze())
-    plt.savefig("peaks2.png")
-    plt.clf()
+            print(f"Synthetic XRD - {syn_dataset.df.iloc[SAMPLE_IDX]['xrd_file']}")
+
+            plt.plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), syn_sample.squeeze())
+            plt.title(f"Synthetic XRD - {syn_dataset.df.iloc[SAMPLE_IDX]['route']}")
+            plt.savefig("peaks_syn.png")
+            plt.clf()
+
+            plt.plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), real_sample.squeeze())
+            plt.title(f"Real XRD - {real_dataset.df.iloc[SAMPLE_IDX]['route']}")
+            plt.savefig("peaks_real.png")
+            plt.clf()
+
+            # wait on key press
+            input("Press Enter to continue...")
+            plt.close()

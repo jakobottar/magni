@@ -1,7 +1,7 @@
 arch: simplemlp
 batch-size: 8
 dataset: xrd
-dataset-root: /scratch_nvme/jakobj/nfs/paired-xrd-sem
+dataset-root: /usr/sci/scratch_nvme/jakobj/nfs/paired-xrd-sem-2
 device: cuda
 epochs: 10
 lr: 0.001
