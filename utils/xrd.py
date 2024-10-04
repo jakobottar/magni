@@ -377,7 +377,7 @@ class PairedDataset(torch.utils.data.Dataset):
         if self.mode == "paired" or self.mode == "xrd":
             # get xrd data
             if self.synthetic_xrd:
-                xrd = self.synxrd.generate_synthetic_xrd(material=sample["finalmat"])
+                xrd = self.synxrd_generator.generate_synthetic_xrd(material=sample["finalmat"])
             else:
                 xrd = np.load(os.path.join(self.root, self.split, sample["xrd_file"]))
 
