@@ -135,10 +135,21 @@ if __name__ == "__main__":
     ##################
     print(f"Using device: {configs.device}")
 
+    # get in and out feature shapes for XRD model
+    match configs.join_method.lower():
+        case "concat":
+            xrd_feature_dim = 16
+        case "sign-max":
+            # raise NotImplementedError("Sign-max not implemented yet")
+            xrd_feature_dim = 2048
+        case "add":
+            raise NotImplementedError("Add not implemented yet")
+            xrd_feature_dim = 2048
+
     # choose model architecture
     match configs.arch.lower():
         case "simplemlp":
-            model = SimpleMLP(input_dim=4096, num_classes=NUM_CLASSES)
+            model = SimpleMLP(input_dim=4096, feature_dim=xrd_feature_dim, num_classes=NUM_CLASSES)
 
         case "simplecnn":
             raise NotImplementedError

@@ -70,7 +70,7 @@ def cosine_annealing(step, total_steps, lr_max, lr_min):
     return lr_min + (lr_max - lr_min) * 0.5 * (1 + np.cos(step / total_steps * np.pi))
 
 
-def train_loop(dataloader, image_model, xrd_model, model, optimizer, use_fake_token=False):
+def train_loop(dataloader, image_model, xrd_model, model, optimizer, use_fake_token=False, join_method="concat"):
     """Train the model for one epoch."""
     # set model to train mode
     model.train()
@@ -105,7 +105,13 @@ def train_loop(dataloader, image_model, xrd_model, model, optimizer, use_fake_to
             xrd_features = torch.tensor([FAKE_TOKENS[label.item()] for label in labels]).to(configs.device)
 
         # concatenate features
-        features = torch.cat((sem_features, xrd_features), dim=1)
+        match join_method.lower():
+            case "concat":
+                features = torch.cat((sem_features, xrd_features), dim=1)
+            case "sign-max":
+                raise NotImplementedError("Sign-max not implemented yet")
+            case "add":
+                raise NotImplementedError("Add not implemented yet")
 
         # compute prediction and loss
         logits = model(features)
@@ -127,7 +133,9 @@ def train_loop(dataloader, image_model, xrd_model, model, optimizer, use_fake_to
     }
 
 
-def val_loop(val_dataloader, image_model, xrd_model, model, use_logit_masking=False, use_fake_token=False):
+def val_loop(
+    val_dataloader, image_model, xrd_model, model, use_logit_masking=False, use_fake_token=False, join_method="concat"
+):
     """Validate the model for one epoch."""
     # set model to eval mode
     model.eval()
@@ -138,7 +146,6 @@ def val_loop(val_dataloader, image_model, xrd_model, model, use_logit_masking=Fa
 
     num_batches = len(val_dataloader)
     val_loss = 0.0
-    incorrect = 0
     with torch.no_grad():
         # validate on in-distribution data
         tbar_loader = tqdm(val_dataloader, desc="val", dynamic_ncols=True, disable=configs.no_tqdm)
@@ -256,8 +263,22 @@ if __name__ == "__main__":
     for param in image_model.parameters():
         param.requires_grad = False
 
+    # get in and out feature shapes for XRD model
+    match configs.join_method.lower():
+        case "concat":
+            xrd_feature_dim = 16
+            classifier_input_dim = 2048 + 16
+        case "sign-max":
+            raise NotImplementedError("Sign-max not implemented yet")
+            xrd_feature_dim = 2048
+            classifier_input_dim = 2048
+        case "add":
+            raise NotImplementedError("Add not implemented yet")
+            xrd_feature_dim = 2048
+            classifier_input_dim = 2048
+
     # set up XRD model
-    xrd_model = SimpleMLP(input_dim=4096, num_classes=3)
+    xrd_model = SimpleMLP(input_dim=4096, feature_dim=xrd_feature_dim, num_classes=3)
 
     # load checkpoint
     xrd_model.load_state_dict(torch.load(configs.xrd_checkpoint, map_location="cpu"))
@@ -270,9 +291,9 @@ if __name__ == "__main__":
 
     # set up classifier model
     model = nn.Sequential(
-        nn.Linear(2048 + 16, 2048 + 16),
+        nn.Linear(classifier_input_dim, classifier_input_dim),
         nn.ReLU(),
-        nn.Linear(2048 + 16, NUM_CLASSES),
+        nn.Linear(classifier_input_dim, NUM_CLASSES),
     )
     model.to(configs.device)
 
@@ -315,6 +336,7 @@ if __name__ == "__main__":
                 model,
                 optimizer,
                 use_fake_token=configs.use_fake_token_baseline,
+                join_method=configs.join_method,
             )
             val_stats = val_loop(
                 val_dataloader,
@@ -323,6 +345,7 @@ if __name__ == "__main__":
                 model,
                 use_logit_masking=configs.use_logit_masking_baseline,
                 use_fake_token=configs.use_fake_token_baseline,
+                join_method=configs.join_method,
             )
             mlflow.log_metrics(train_stats | val_stats, step=epoch)
 
@@ -357,6 +380,7 @@ if __name__ == "__main__":
         model,
         use_logit_masking=configs.use_logit_masking_baseline,
         use_fake_token=configs.use_fake_token_baseline,
+        join_method=configs.join_method,
     )
     print(f"test acc: {test_stats['val_acc']*100:.2f}%, test loss: {test_stats['val_loss']:.4f}")
 

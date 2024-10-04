@@ -43,6 +43,7 @@ def parse_configs():
     parser.add_argument("-e", "--epochs", type=int, default=1, help="number of epochs to train for")
     parser.add_argument("--fold-num", type=int, default=1, help="fold number for cross-validation")
     parser.add_argument("--lr", type=float, default=1.0, help="learning rate")
+    parser.add_argument("--join-method", type=str, default="concat", help="method to join embeddings")
     parser.add_argument("--momentum", type=float, default=0.9, help="optimizer momentum")
     parser.add_argument("--multiplier", type=int, default=1, help="batch multiplier for SimCLR")
     parser.add_argument("--name", type=str, default="random", help="run name")
