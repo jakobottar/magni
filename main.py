@@ -130,7 +130,14 @@ def train_loop(dataloader, image_model, xrd_model, model, optimizer, use_fake_to
 
 
 def val_loop(
-    val_dataloader, image_model, xrd_model, model, use_logit_masking=False, use_fake_token=False, join_method="concat"
+    val_dataloader,
+    image_model,
+    xrd_model,
+    model,
+    use_logit_masking=False,
+    use_fake_token=False,
+    join_method="concat",
+    missing_modality=None,
 ):
     """Validate the model for one epoch."""
     # set model to eval mode
@@ -148,6 +155,12 @@ def val_loop(
         tbar_loader = tqdm(val_dataloader, desc="val", dynamic_ncols=True, disable=configs.no_tqdm)
 
         for xrds, sems, labels in tbar_loader:
+
+            if missing_modality == "xrd":
+                xrds = torch.zeros_like(xrds)
+            elif missing_modality == "sem":
+                sems = torch.zeros_like(sems)
+
             # move images to GPU if needed
             xrds, sems, labels = (
                 xrds.to(configs.device),
@@ -264,7 +277,7 @@ if __name__ == "__main__":
     match configs.join_method.lower():
         case "concat":
             xrd_feature_dim = 16
-            classifier_input_dim = 2048 + 16
+            classifier_input_dim = 2048 + xrd_feature_dim
         case "max" | "add":
             xrd_feature_dim = 2048
             classifier_input_dim = 2048
@@ -338,6 +351,7 @@ if __name__ == "__main__":
                 use_logit_masking=configs.use_logit_masking_baseline,
                 use_fake_token=configs.use_fake_token_baseline,
                 join_method=configs.join_method,
+                missing_modality=configs.missing_modality,
             )
             mlflow.log_metrics(train_stats | val_stats, step=epoch)
 
@@ -375,6 +389,7 @@ if __name__ == "__main__":
         use_logit_masking=configs.use_logit_masking_baseline,
         use_fake_token=configs.use_fake_token_baseline,
         join_method=configs.join_method,
+        missing_modality=configs.missing_modality,
     )
     print(f"test acc: {test_stats['val_acc']*100:.2f}%, test loss: {test_stats['val_loss']:.4f}")
 
