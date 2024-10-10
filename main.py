@@ -22,6 +22,7 @@ from utils import (
     ResNet50,
     SimpleMLP,
     ViT,
+    combine_features,
     get_datasets,
     parse_configs,
 )
@@ -78,6 +79,7 @@ def train_loop(dataloader, image_model, xrd_model, model, optimizer, use_fake_to
     # set up loss and metrics
     loss_fn = nn.CrossEntropyLoss()
     accuracy = MulticlassAccuracy(num_classes=NUM_CLASSES).to(configs.device)
+    join_func = combine_features(join_method)
 
     num_batches = len(dataloader)
     train_loss = 0
@@ -104,14 +106,8 @@ def train_loop(dataloader, image_model, xrd_model, model, optimizer, use_fake_to
         if use_fake_token:
             xrd_features = torch.tensor([FAKE_TOKENS[label.item()] for label in labels]).to(configs.device)
 
-        # concatenate features
-        match join_method.lower():
-            case "concat":
-                features = torch.cat((sem_features, xrd_features), dim=1)
-            case "sign-max":
-                raise NotImplementedError("Sign-max not implemented yet")
-            case "add":
-                raise NotImplementedError("Add not implemented yet")
+        # join features
+        features = join_func(sem_features, xrd_features)
 
         # compute prediction and loss
         logits = model(features)
@@ -143,6 +139,7 @@ def val_loop(
     # set up loss and metrics
     loss_fn = nn.CrossEntropyLoss()
     accuracy = MulticlassAccuracy(num_classes=NUM_CLASSES).to(configs.device)
+    join_func = combine_features(join_method)
 
     num_batches = len(val_dataloader)
     val_loss = 0.0
@@ -168,7 +165,7 @@ def val_loop(
                 xrd_features = torch.tensor([FAKE_TOKENS[label.item()] for label in labels]).to(configs.device)
 
             # concatenate features
-            features = torch.cat((sem_features, xrd_features), dim=1)
+            features = join_func(sem_features, xrd_features)
 
             # compute prediction and loss
             logits = model(features)
@@ -255,7 +252,7 @@ if __name__ == "__main__":
                 image_model.heads.head = nn.Linear(image_model.heads.head.in_features, NUM_CLASSES)
 
     # load checkpoint
-    image_model.load_state_dict(torch.load(configs.checkpoint, map_location="cpu"))
+    image_model.load_state_dict(torch.load(configs.checkpoint, map_location="cpu", weights_only=True))
     image_model.to(configs.device)
 
     # freeze model
@@ -268,12 +265,7 @@ if __name__ == "__main__":
         case "concat":
             xrd_feature_dim = 16
             classifier_input_dim = 2048 + 16
-        case "sign-max":
-            raise NotImplementedError("Sign-max not implemented yet")
-            xrd_feature_dim = 2048
-            classifier_input_dim = 2048
-        case "add":
-            raise NotImplementedError("Add not implemented yet")
+        case "max" | "add":
             xrd_feature_dim = 2048
             classifier_input_dim = 2048
 
@@ -281,7 +273,7 @@ if __name__ == "__main__":
     xrd_model = SimpleMLP(input_dim=4096, feature_dim=xrd_feature_dim, num_classes=3)
 
     # load checkpoint
-    xrd_model.load_state_dict(torch.load(configs.xrd_checkpoint, map_location="cpu"))
+    xrd_model.load_state_dict(torch.load(configs.xrd_checkpoint, map_location="cpu", weights_only=True))
     xrd_model.to(configs.device)
 
     # freeze model
@@ -369,7 +361,9 @@ if __name__ == "__main__":
 
     # load best model
     if not configs.skip_train:
-        model.load_state_dict(torch.load(os.path.join(configs.root, "best.pth"), map_location=torch.device("cpu")))
+        model.load_state_dict(
+            torch.load(os.path.join(configs.root, "best.pth"), map_location=torch.device("cpu"), weights_only=True)
+        )
         model.to(configs.device)
 
     # test best model

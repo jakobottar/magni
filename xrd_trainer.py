@@ -139,11 +139,7 @@ if __name__ == "__main__":
     match configs.join_method.lower():
         case "concat":
             xrd_feature_dim = 16
-        case "sign-max":
-            # raise NotImplementedError("Sign-max not implemented yet")
-            xrd_feature_dim = 2048
-        case "add":
-            raise NotImplementedError("Add not implemented yet")
+        case "max" | "add":
             xrd_feature_dim = 2048
 
     # choose model architecture
@@ -157,7 +153,7 @@ if __name__ == "__main__":
 
     # load checkpoint if provided
     if configs.checkpoint is not None:
-        model.load_state_dict(torch.load(configs.checkpoint, map_location="cpu"))
+        model.load_state_dict(torch.load(configs.checkpoint, map_location="cpu", weights_only=True))
 
     model.to(configs.device)
 
@@ -216,7 +212,9 @@ if __name__ == "__main__":
 
     # load best model
     if not configs.skip_train:
-        model.load_state_dict(torch.load(os.path.join(configs.root, "best.pth"), map_location=torch.device("cpu")))
+        model.load_state_dict(
+            torch.load(os.path.join(configs.root, "best.pth"), map_location=torch.device("cpu"), weights_only=True)
+        )
         model.to(configs.device)
 
     # test best model
