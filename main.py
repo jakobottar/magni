@@ -22,6 +22,7 @@ from utils import (
     ResNet50,
     SimpleMLP,
     ViT,
+    combine_features,
     get_datasets,
     parse_configs,
 )
@@ -70,7 +71,7 @@ def cosine_annealing(step, total_steps, lr_max, lr_min):
     return lr_min + (lr_max - lr_min) * 0.5 * (1 + np.cos(step / total_steps * np.pi))
 
 
-def train_loop(dataloader, image_model, xrd_model, model, optimizer, use_fake_token=False):
+def train_loop(dataloader, image_model, xrd_model, model, optimizer, use_fake_token=False, join_method="concat"):
     """Train the model for one epoch."""
     # set model to train mode
     model.train()
@@ -78,6 +79,7 @@ def train_loop(dataloader, image_model, xrd_model, model, optimizer, use_fake_to
     # set up loss and metrics
     loss_fn = nn.CrossEntropyLoss()
     accuracy = MulticlassAccuracy(num_classes=NUM_CLASSES).to(configs.device)
+    join_func = combine_features(join_method)
 
     num_batches = len(dataloader)
     train_loss = 0
@@ -104,8 +106,8 @@ def train_loop(dataloader, image_model, xrd_model, model, optimizer, use_fake_to
         if use_fake_token:
             xrd_features = torch.tensor([FAKE_TOKENS[label.item()] for label in labels]).to(configs.device)
 
-        # concatenate features
-        features = torch.cat((sem_features, xrd_features), dim=1)
+        # join features
+        features = join_func(sem_features, xrd_features)
 
         # compute prediction and loss
         logits = model(features)
@@ -127,7 +129,16 @@ def train_loop(dataloader, image_model, xrd_model, model, optimizer, use_fake_to
     }
 
 
-def val_loop(val_dataloader, image_model, xrd_model, model, use_logit_masking=False, use_fake_token=False):
+def val_loop(
+    val_dataloader,
+    image_model,
+    xrd_model,
+    model,
+    use_logit_masking=False,
+    use_fake_token=False,
+    join_method="concat",
+    missing_modality=None,
+):
     """Validate the model for one epoch."""
     # set model to eval mode
     model.eval()
@@ -135,15 +146,21 @@ def val_loop(val_dataloader, image_model, xrd_model, model, use_logit_masking=Fa
     # set up loss and metrics
     loss_fn = nn.CrossEntropyLoss()
     accuracy = MulticlassAccuracy(num_classes=NUM_CLASSES).to(configs.device)
+    join_func = combine_features(join_method)
 
     num_batches = len(val_dataloader)
     val_loss = 0.0
-    incorrect = 0
     with torch.no_grad():
         # validate on in-distribution data
         tbar_loader = tqdm(val_dataloader, desc="val", dynamic_ncols=True, disable=configs.no_tqdm)
 
         for xrds, sems, labels in tbar_loader:
+
+            if missing_modality == "xrd":
+                xrds = torch.zeros_like(xrds)
+            elif missing_modality == "sem":
+                sems = torch.zeros_like(sems)
+
             # move images to GPU if needed
             xrds, sems, labels = (
                 xrds.to(configs.device),
@@ -161,7 +178,7 @@ def val_loop(val_dataloader, image_model, xrd_model, model, use_logit_masking=Fa
                 xrd_features = torch.tensor([FAKE_TOKENS[label.item()] for label in labels]).to(configs.device)
 
             # concatenate features
-            features = torch.cat((sem_features, xrd_features), dim=1)
+            features = join_func(sem_features, xrd_features)
 
             # compute prediction and loss
             logits = model(features)
@@ -248,7 +265,7 @@ if __name__ == "__main__":
                 image_model.heads.head = nn.Linear(image_model.heads.head.in_features, NUM_CLASSES)
 
     # load checkpoint
-    image_model.load_state_dict(torch.load(configs.checkpoint, map_location="cpu"))
+    image_model.load_state_dict(torch.load(configs.checkpoint, map_location="cpu", weights_only=True))
     image_model.to(configs.device)
 
     # freeze model
@@ -256,11 +273,20 @@ if __name__ == "__main__":
     for param in image_model.parameters():
         param.requires_grad = False
 
+    # get in and out feature shapes for XRD model
+    match configs.join_method.lower():
+        case "concat":
+            xrd_feature_dim = 16
+            classifier_input_dim = 2048 + xrd_feature_dim
+        case "max" | "add":
+            xrd_feature_dim = 2048
+            classifier_input_dim = 2048
+
     # set up XRD model
-    xrd_model = SimpleMLP(input_dim=4096, num_classes=3)
+    xrd_model = SimpleMLP(input_dim=4096, feature_dim=xrd_feature_dim, num_classes=3)
 
     # load checkpoint
-    xrd_model.load_state_dict(torch.load(configs.xrd_checkpoint, map_location="cpu"))
+    xrd_model.load_state_dict(torch.load(configs.xrd_checkpoint, map_location="cpu", weights_only=True))
     xrd_model.to(configs.device)
 
     # freeze model
@@ -270,9 +296,9 @@ if __name__ == "__main__":
 
     # set up classifier model
     model = nn.Sequential(
-        nn.Linear(2048 + 16, 2048 + 16),
+        nn.Linear(classifier_input_dim, classifier_input_dim),
         nn.ReLU(),
-        nn.Linear(2048 + 16, NUM_CLASSES),
+        nn.Linear(classifier_input_dim, NUM_CLASSES),
     )
     model.to(configs.device)
 
@@ -315,6 +341,7 @@ if __name__ == "__main__":
                 model,
                 optimizer,
                 use_fake_token=configs.use_fake_token_baseline,
+                join_method=configs.join_method,
             )
             val_stats = val_loop(
                 val_dataloader,
@@ -323,6 +350,8 @@ if __name__ == "__main__":
                 model,
                 use_logit_masking=configs.use_logit_masking_baseline,
                 use_fake_token=configs.use_fake_token_baseline,
+                join_method=configs.join_method,
+                missing_modality=configs.missing_modality,
             )
             mlflow.log_metrics(train_stats | val_stats, step=epoch)
 
@@ -346,7 +375,9 @@ if __name__ == "__main__":
 
     # load best model
     if not configs.skip_train:
-        model.load_state_dict(torch.load(os.path.join(configs.root, "best.pth"), map_location=torch.device("cpu")))
+        model.load_state_dict(
+            torch.load(os.path.join(configs.root, "best.pth"), map_location=torch.device("cpu"), weights_only=True)
+        )
         model.to(configs.device)
 
     # test best model
@@ -357,6 +388,8 @@ if __name__ == "__main__":
         model,
         use_logit_masking=configs.use_logit_masking_baseline,
         use_fake_token=configs.use_fake_token_baseline,
+        join_method=configs.join_method,
+        missing_modality=configs.missing_modality,
     )
     print(f"test acc: {test_stats['val_acc']*100:.2f}%, test loss: {test_stats['val_loss']:.4f}")
 

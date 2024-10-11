@@ -334,6 +334,7 @@ class PairedDataset(torch.utils.data.Dataset):
         # load dataset metadata file
         try:
             self.df = pd.read_csv(os.path.join(self.root, self.split, "metadata.csv"))
+            self.df = pd.read_csv(os.path.join(self.root, self.split, "metadata.csv"))
         except FileNotFoundError as exc:
             raise FileNotFoundError(f"Dataset {self.root} does not exist, make sure it has been built.") from exc
 
@@ -370,6 +371,7 @@ class PairedDataset(torch.utils.data.Dataset):
 
         # get sample
         if self.mode == "paired" or self.mode == "sem":
+            sem = Image.open(os.path.join(self.root, self.split, sample["sem_file"])).convert("RGB")
             sem = Image.open(os.path.join(self.root, self.split, sample["sem_file"])).convert("RGB")
             if self.sem_transform:
                 sem = self.sem_transform(sem)
