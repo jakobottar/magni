@@ -135,10 +135,17 @@ if __name__ == "__main__":
     ##################
     print(f"Using device: {configs.device}")
 
+    # get in and out feature shapes for XRD model
+    match configs.join_method.lower():
+        case "concat":
+            xrd_feature_dim = 16
+        case "max" | "add":
+            xrd_feature_dim = 2048
+
     # choose model architecture
     match configs.arch.lower():
         case "simplemlp":
-            model = SimpleMLP(input_dim=4096, num_classes=NUM_CLASSES)
+            model = SimpleMLP(input_dim=4096, feature_dim=xrd_feature_dim, num_classes=NUM_CLASSES)
 
         case "simplecnn":
             raise NotImplementedError
@@ -146,7 +153,7 @@ if __name__ == "__main__":
 
     # load checkpoint if provided
     if configs.checkpoint is not None:
-        model.load_state_dict(torch.load(configs.checkpoint, map_location="cpu"))
+        model.load_state_dict(torch.load(configs.checkpoint, map_location="cpu", weights_only=True))
 
     model.to(configs.device)
 
@@ -205,7 +212,9 @@ if __name__ == "__main__":
 
     # load best model
     if not configs.skip_train:
-        model.load_state_dict(torch.load(os.path.join(configs.root, "best.pth"), map_location=torch.device("cpu")))
+        model.load_state_dict(
+            torch.load(os.path.join(configs.root, "best.pth"), map_location=torch.device("cpu"), weights_only=True)
+        )
         model.to(configs.device)
 
     # test best model

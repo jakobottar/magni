@@ -256,9 +256,9 @@ def get_datasets(configs) -> dict:
             xrd_transform = v2.Compose(
                 [
                     torch.from_numpy,
+                    Normalize(),
                     PeakHeightShiftTransform(shift_scale=0.15),
                     RandomNoiseTransform(noise_level=0.002),
-                    Normalize(),
                 ]
             )
 
@@ -273,7 +273,7 @@ def get_datasets(configs) -> dict:
                 root=configs.dataset_root,
                 split="val",
                 fold_num=configs.fold_num,
-                xrd_transform=torch.from_numpy,
+                xrd_transform=v2.Compose([torch.from_numpy, Normalize()]),
                 mode="xrd",
             )
 
@@ -284,9 +284,9 @@ def get_datasets(configs) -> dict:
             xrd_transform = v2.Compose(
                 [
                     torch.from_numpy,
+                    Normalize(),
                     PeakHeightShiftTransform(shift_scale=0.15),
                     RandomNoiseTransform(noise_level=0.002),
-                    Normalize(),
                 ]
             )
 
@@ -303,7 +303,7 @@ def get_datasets(configs) -> dict:
                 split="val",
                 fold_num=configs.fold_num,
                 sem_transform=transforms["val"],
-                xrd_transform=torch.from_numpy,
+                xrd_transform=v2.Compose([torch.from_numpy, Normalize()]),
                 mode="paired",
             )
 
