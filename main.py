@@ -51,19 +51,19 @@ LOGIT_MASKS_2 = {
 }
 
 FAKE_TOKENS = {
-    0: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U3O8
-    1: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U3O8
-    2: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U3O8
-    3: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U3O8
-    4: [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # UO2
-    5: [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # UO2
-    6: [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # UO2
-    7: [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # UO2
-    8: [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # UO2
-    9: [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # UO3
-    10: [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # UO3
-    11: [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # UO3
-    12: [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # UO3
+    0: [1, 0, 0],  # U3O8
+    1: [1, 0, 0],  # U3O8
+    2: [1, 0, 0],  # U3O8
+    3: [1, 0, 0],  # U3O8
+    4: [0, 1, 0],  # UO2
+    5: [0, 1, 0],  # UO2
+    6: [0, 1, 0],  # UO2
+    7: [0, 1, 0],  # UO2
+    8: [0, 1, 0],  # UO2
+    9: [0, 0, 1],  # UO3
+    10: [0, 0, 1],  # UO3
+    11: [0, 0, 1],  # UO3
+    12: [0, 0, 1],  # UO3
 }
 
 
@@ -104,7 +104,11 @@ def train_loop(dataloader, image_model, xrd_model, model, optimizer, use_fake_to
 
         # set up fake tokens
         if use_fake_token:
-            xrd_features = torch.tensor([FAKE_TOKENS[label.item()] for label in labels]).to(configs.device)
+            ft = [FAKE_TOKENS[label.item()] for label in labels]
+            for i in range(len(ft)):
+                ft[i].extend([0] * (xrd_feature_dim - len(ft[i])))
+
+            xrd_features = torch.tensor(ft).to(configs.device)
 
         # join features
         features = join_func(sem_features, xrd_features)
@@ -175,7 +179,11 @@ def val_loop(
 
             # set up fake tokens
             if use_fake_token:
-                xrd_features = torch.tensor([FAKE_TOKENS[label.item()] for label in labels]).to(configs.device)
+                ft = [FAKE_TOKENS[label.item()] for label in labels]
+                for i in range(len(ft)):
+                    ft[i].extend([0] * (xrd_feature_dim - len(ft[i])))
+
+                xrd_features = torch.tensor(ft).to(configs.device)
 
             # concatenate features
             features = join_func(sem_features, xrd_features)
