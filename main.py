@@ -195,9 +195,6 @@ def val_loop(
                 # get class pred from XRD model
                 xrd_preds = torch.argmax(F.softmax(xrd_logits.squeeze(), dim=1), dim=1)
 
-                # # get class pred from label (for true best case)
-                # xrd_preds = labels
-
                 # make mask for image_logits with class pred
                 for i, (logit, pred) in enumerate(zip(sem_logits, xrd_preds)):
                     mask = torch.tensor(LOGIT_MASKS[pred.item()]).to(configs.device)
