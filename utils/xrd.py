@@ -1,14 +1,19 @@
 import io
 import math
 import os
+import warnings
 import xml.etree.ElementTree as ET
 import zipfile
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import scipy
 import torch
+from mp_api.client import MPRester
 from PIL import Image
+from pymatgen.analysis.diffraction.xrd import XRDCalculator
+from pymatgen.core import IStructure, Lattice, Structure
 from torch.utils.data import Dataset
 
 COLS = "?,??,TwoTheta,Theta,Intensity"
@@ -16,6 +21,14 @@ COLS = "?,??,TwoTheta,Theta,Intensity"
 X_MIN = 10
 X_MAX = 70
 NUM_POINTS = 4096
+
+# cloudy-lemon-birman
+
+# for synthetic data
+FWHM = 0.2
+SIGMA = FWHM * 0.42463  # 1/(2*sqrt(2*ln2))=0.42463
+OMEGA = 0.001
+SHIFT_SIGMA = 0.05
 
 ROUTES = [
     "U3O8AUC",
@@ -67,7 +80,16 @@ class PeakHeightShiftTransform:
             # add shift to signal at index data location
             # take the chunk and multiply by shift value so we "scale" shift by the peak height
             chunk = data[loc - math.floor(self.norm_len / 2) : loc + math.ceil(self.norm_len / 2)]
-            chunk *= self.shift * np.random.normal(0, self.shift_scale)
+
+            # handle out of bounds cases
+            if loc + math.ceil(self.norm_len / 2) > len(data):
+                shift_copy = self.shift[: len(chunk)]
+                chunk *= shift_copy * np.random.normal(0, self.shift_scale)
+            elif loc - math.floor(self.norm_len / 2) < 0:
+                shift_copy = self.shift[-len(chunk) :]
+                chunk *= shift_copy * np.random.normal(0, self.shift_scale)
+            else:
+                chunk *= self.shift * np.random.normal(0, self.shift_scale)
 
             data[loc - math.floor(self.norm_len / 2) : loc + math.ceil(self.norm_len / 2)] += chunk
 
@@ -197,25 +219,97 @@ def read_txt(filename) -> pd.DataFrame:
     return data
 
 
-def process_xrd_data(data: pd.DataFrame) -> pd.DataFrame:
+class SyntheticXRDGenerator:
+    def __init__(self, root: str = "data", source: str = "cif", peak_pos_shift: bool = False) -> None:
 
-    ## subtract the minimum intensity from all intensities
-    data["Intensity"] = data["Intensity"] - data["Intensity"].min()
+        self.root = root
+        self.source = source
+        self.peak_pos_shift = peak_pos_shift
+        self.pattern_cache = {}
 
-    ## drop datapoints greather than 70 degrees or less than 10 degrees
-    data = data[(data["TwoTheta"] >= 10) & (data["TwoTheta"] <= 70)]
+    def process_xrd_data(self, data: pd.DataFrame) -> pd.DataFrame:
 
-    ## interpolate the data to match a standard range of 10 to 90 degrees
-    x = np.linspace(X_MIN, X_MAX, NUM_POINTS)  # delta of 0.1953125 degrees
-    y = np.interp(x, data["TwoTheta"], data["Intensity"])
+        ## subtract the minimum intensity from all intensities
+        data["Intensity"] = data["Intensity"] - data["Intensity"].min()
 
-    # copy data to new dataframe
-    data = pd.DataFrame({"TwoTheta": x, "Intensity": y})
+        ## drop datapoints greather than 70 degrees or less than 10 degrees
+        data = data[(data["TwoTheta"] >= 10) & (data["TwoTheta"] <= 70)]
 
-    ## normalize the intensity by integrating the area under the curve
-    data["Intensity"] = data["Intensity"] / data["Intensity"].sum()
+        ## interpolate the data to match a standard range of 10 to 90 degrees
+        x = np.linspace(X_MIN, X_MAX, NUM_POINTS)  # delta of 0.1953125 degrees
+        y = np.interp(x, data["TwoTheta"], data["Intensity"])
 
-    return data
+        # copy data to new dataframe
+        data = pd.DataFrame({"TwoTheta": x, "Intensity": y})
+
+        ## normalize the intensity by integrating the area under the curve
+        # data["Intensity"] = data["Intensity"] / data["Intensity"].sum()
+
+        return data
+
+    def df_2_np(self, df: pd.DataFrame) -> np.ndarray:
+        return np.array(df["Intensity"]).astype(np.float32)
+
+    def generate_synthetic_xrd(self, material: str) -> pd.DataFrame:
+
+        if material in self.pattern_cache.keys():
+            intensity = self.pattern_cache[material]
+            x = np.linspace(X_MIN, X_MAX, num=NUM_POINTS, endpoint=True)
+
+        else:
+            if self.source == "cif":
+                filename = os.path.join(self.root, f"{material}.cif")
+                structure = Structure.from_file(filename, primitive=False, sort=False, merge_tol=0.0)
+
+            elif self.source == "mp":
+                with MPRester(api_key=os.getenv("MP_API_KEY")) as mpr:
+                    structure = mpr.get_structure_by_material_id(material)
+
+            xrd = XRDCalculator(
+                wavelength="CuKa", symprec=1.0
+            )  # initiate XRD calculator (can specify various options here)
+
+            pattern = xrd.get_pattern(structure, scaled=False, two_theta_range=(X_MIN, X_MAX))
+
+            if self.peak_pos_shift:
+                # shift the peak positions using a gaussian distribution
+                pattern.x += np.random.normal(0, SHIFT_SIGMA, len(pattern.x))
+
+            # spread out the peaks using a gaussian distribution
+            # https://github.com/Ying-Ying-Zhang/xrd_plot/blob/main/xrd_plot.py
+
+            a = 1 / (SIGMA * np.sqrt(2 * np.pi))
+            x = np.linspace(X_MIN, X_MAX, num=NUM_POINTS, endpoint=True)
+
+            def spectrum(x, y, x_range):
+                gE = []
+                for xi in x_range:
+                    tot = 0
+                    for xj, o in zip(x, y):
+                        # ignore peaks too far out of range
+                        if abs(xj - xi) > 10:
+                            continue
+
+                        L = (FWHM / (2 * np.pi)) * (1 / ((xj - xi) ** 2 + 0.25 * FWHM**2))
+                        G = a * np.exp(-((xj - xi) ** 2) / (2 * SIGMA**2))
+                        P = OMEGA * G + (1 - OMEGA) * L
+                        tot += o * P
+                    gE.append(tot)
+                return gE
+
+            intensity = spectrum(pattern.x, pattern.y, x)
+
+            self.pattern_cache[material] = intensity
+
+        # convert to standard pd dataframe
+        df = pd.DataFrame(
+            {
+                "TwoTheta": x,
+                "Intensity": intensity,
+            }
+        )
+
+        return self.df_2_np(self.process_xrd_data(df))
 
 
 class PairedDataset(torch.utils.data.Dataset):
@@ -226,19 +320,26 @@ class PairedDataset(torch.utils.data.Dataset):
         fold_num: int = 1,
         sem_transform=None,
         xrd_transform=None,
+        synthetic_xrd: bool = False,
         mode: str = "paired",
     ):
         self.root = root
         self.split = split
         self.sem_transform = sem_transform
         self.xrd_transform = xrd_transform
+        self.synthetic_xrd = synthetic_xrd
+        self.synxrd_generator = SyntheticXRDGenerator(root=root, peak_pos_shift=False)
         self.mode = mode  # can be 'paired', 'sem', 'xrd'
 
         # load dataset metadata file
         try:
             self.df = pd.read_csv(os.path.join(self.root, self.split, "metadata.csv"))
+            self.df = pd.read_csv(os.path.join(self.root, self.split, "metadata.csv"))
         except FileNotFoundError as exc:
             raise FileNotFoundError(f"Dataset {self.root} does not exist, make sure it has been built.") from exc
+
+        # filter out uo3 materials
+        self.df = self.df[self.df["finalmat"] != "UO3"]
 
         # filter metadata by fold number
         # if split == "train":
@@ -271,10 +372,18 @@ class PairedDataset(torch.utils.data.Dataset):
         # get sample
         if self.mode == "paired" or self.mode == "sem":
             sem = Image.open(os.path.join(self.root, self.split, sample["sem_file"])).convert("RGB")
+            sem = Image.open(os.path.join(self.root, self.split, sample["sem_file"])).convert("RGB")
             if self.sem_transform:
                 sem = self.sem_transform(sem)
+
         if self.mode == "paired" or self.mode == "xrd":
-            xrd = np.load(os.path.join(self.root, self.split, sample["xrd_file"]))
+            # get xrd data
+            if self.synthetic_xrd:
+                xrd = self.synxrd_generator.generate_synthetic_xrd(material=sample["finalmat"])
+            else:
+                xrd = np.load(os.path.join(self.root, self.split, sample["xrd_file"]))
+
+            # apply xrd transform
             if self.xrd_transform:
                 xrd = self.xrd_transform(xrd)
 
@@ -294,85 +403,55 @@ class PairedDataset(torch.utils.data.Dataset):
 
 
 if __name__ == "__main__":
-    import random
-
     import matplotlib.pyplot as plt
     import scipy
-    from scipy.stats import norm
     from torchvision.transforms import v2
 
     xrd_transform = v2.Compose(
-        [torch.from_numpy, PeakHeightShiftTransform(), RandomNoiseTransform(noise_level=0.002), Normalize()]
+        [
+            torch.from_numpy,
+            Normalize(),
+            # PeakHeightShiftTransform(shift_scale=0.15),
+            # RandomNoiseTransform(noise_level=0.005),
+        ]
     )
 
-    train_dataset = PairedDataset(
-        root="/scratch_nvme/jakobj/nfs/paired-xrd-sem",
-        split="train",
-        xrd_transform=xrd_transform,
-        mode="xrd",
-    )
-    val_dataset = PairedDataset(
-        root="/scratch_nvme/jakobj/nfs/paired-xrd-sem",
+    syn_dataset = PairedDataset(
+        root="/usr/sci/scratch_nvme/jakobj/nfs/paired-xrd-sem-2",
         split="val",
-        xrd_transform=torch.from_numpy,
+        xrd_transform=xrd_transform,
+        synthetic_xrd=True,
+        mode="xrd",
+    )
+    real_dataset = PairedDataset(
+        root="/usr/sci/scratch_nvme/jakobj/nfs/paired-xrd-sem-2",
+        split="val",
+        xrd_transform=xrd_transform,
+        synthetic_xrd=False,
         mode="xrd",
     )
 
-    train_sample = train_dataset[48][0].numpy()
+    for i in range(len(syn_dataset)):
+        SAMPLE_IDX = i
+        if syn_dataset.df.iloc[SAMPLE_IDX]["finalmat"] != "UO3":
+            print(f"Skipping {syn_dataset.df.iloc[SAMPLE_IDX]['finalmat']}")
+            continue
+        else:
+            syn_sample = syn_dataset[SAMPLE_IDX][0].numpy()
+            real_sample = real_dataset[SAMPLE_IDX][0].numpy()
 
-    plt.plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), train_sample.squeeze())
-    plt.savefig("peaks.png")
-    plt.clf()
+            print(f"Synthetic XRD - {syn_dataset.df.iloc[SAMPLE_IDX]['xrd_file']}")
 
-#     # def plot_peaks(time, signal, prominence=None):
-#     #     index_data, _ = scipy.signal.find_peaks(np.array(signal), prominence=prominence)
-#     #     print(index_data[0])
-#     #     plt.plot(time, signal)
-#     #     plt.plot(
-#     #         time[index_data],
-#     #         signal[index_data],
-#     #         alpha=0.5,
-#     #         marker="o",
-#     #         mec="r",
-#     #         ms=9,
-#     #         ls=":",
-#     #         label="%d %s" % (index_data[0].size - 1, "Peaks"),
-#     #     )
-#     #     plt.legend(loc="best", framealpha=0.5, numpoints=1)
-#     #     plt.xlabel("Time(s)", fontsize=14)
-#     #     plt.ylabel("Amplitude", fontsize=14)
+            plt.plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), syn_sample.squeeze())
+            plt.title(f"Synthetic XRD - {syn_dataset.df.iloc[SAMPLE_IDX]['route']}")
+            plt.savefig("peaks_syn.png")
+            plt.clf()
 
-#     #     plt.savefig("peaks-raw.png")
-#     #     plt.clf()
+            plt.plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), real_sample.squeeze())
+            plt.title(f"Real XRD - {real_dataset.df.iloc[SAMPLE_IDX]['route']}")
+            plt.savefig("peaks_real.png")
+            plt.clf()
 
-#     #     # generate a normal distribution pdf
-#     #     LEN_SHIFT = 15
-#     #     rv = norm(scale=0.5)
-#     #     x = np.linspace(rv.ppf(0.01), rv.ppf(0.99), 15)
-#     #     shift = rv.pdf(x) * 0.1
-
-#     #     print(LEN_SHIFT // 2)
-
-#     #     for loc in index_data:
-#     #         # add shift to signal at index data location
-#     #         signal[loc - math.floor(LEN_SHIFT / 2) : loc + math.ceil(LEN_SHIFT / 2)] += shift
-
-#     #     plt.plot(time, signal)
-#     #     plt.plot(
-#     #         time[index_data],
-#     #         signal[index_data],
-#     #         alpha=0.5,
-#     #         marker="o",
-#     #         mec="r",
-#     #         ms=9,
-#     #         ls=":",
-#     #         label="%d %s" % (index_data[0].size - 1, "Peaks"),
-#     #     )
-#     #     plt.legend(loc="best", framealpha=0.5, numpoints=1)
-#     #     plt.xlabel("Time(s)", fontsize=14)
-#     #     plt.ylabel("Amplitude", fontsize=14)
-
-#     #     plt.savefig("peaks-changed.png")
-#     #     plt.clf()
-
-#     # plot_peaks(np.linspace(X_MIN, X_MAX, NUM_POINTS), train_sample.squeeze(), prominence=0.025)
+            # wait on key press
+            input("Press Enter to continue...")
+            plt.close()

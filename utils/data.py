@@ -258,7 +258,7 @@ def get_datasets(configs) -> dict:
                     torch.from_numpy,
                     Normalize(),
                     PeakHeightShiftTransform(shift_scale=0.15),
-                    RandomNoiseTransform(noise_level=0.002),
+                    RandomNoiseTransform(noise_level=0.005),
                 ]
             )
 
@@ -267,6 +267,7 @@ def get_datasets(configs) -> dict:
                 split="train",
                 fold_num=configs.fold_num,
                 xrd_transform=xrd_transform,
+                synthetic_xrd=True,
                 mode="xrd",
             )
             id_datasets["val"] = PairedDataset(
@@ -274,6 +275,7 @@ def get_datasets(configs) -> dict:
                 split="val",
                 fold_num=configs.fold_num,
                 xrd_transform=v2.Compose([torch.from_numpy, Normalize()]),
+                synthetic_xrd=False,
                 mode="xrd",
             )
 
@@ -296,6 +298,7 @@ def get_datasets(configs) -> dict:
                 fold_num=configs.fold_num,
                 sem_transform=transforms["train"],
                 xrd_transform=xrd_transform,
+                synthetic_xrd=True,
                 mode="paired",
             )
             id_datasets["val"] = PairedDataset(
@@ -304,6 +307,7 @@ def get_datasets(configs) -> dict:
                 fold_num=configs.fold_num,
                 sem_transform=transforms["val"],
                 xrd_transform=v2.Compose([torch.from_numpy, Normalize()]),
+                synthetic_xrd=False,
                 mode="paired",
             )
 
