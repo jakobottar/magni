@@ -51,6 +51,13 @@ def parse_configs():
         choices=["concat", "max", "add"],
     )
     parser.add_argument(
+        "--join-location",
+        type=str,
+        default="early",
+        help="joining location",
+        choices=["early", "late"],
+    )
+    parser.add_argument(
         "--missing-modality",
         type=str,
         default=None,
@@ -67,7 +74,7 @@ def parse_configs():
     parser.add_argument("-S", "--seed", type=int, default=-1, help="random seed, -1 for random")
     parser.add_argument("--skip-train", action="store_true", help="skip training")
     parser.add_argument("--transforms", type=str, default="randomcrop", nargs="+")
-    parser.add_argument("--use-logit-masking-baseline", action="store_true", help="use logit masking baseline")
+    parser.add_argument("--use-label-masking-baseline", action="store_true", help="use label masking baseline")
     parser.add_argument("--use-fake-token-baseline", action="store_true", help="use fake token baseline")
     parser.add_argument(
         "--use-train-transf-for-val",

@@ -71,7 +71,16 @@ def cosine_annealing(step, total_steps, lr_max, lr_min):
     return lr_min + (lr_max - lr_min) * 0.5 * (1 + np.cos(step / total_steps * np.pi))
 
 
-def train_loop(dataloader, image_model, xrd_model, model, optimizer, use_fake_token=False, join_method="concat"):
+def train_loop(
+    dataloader,
+    image_model,
+    xrd_model,
+    model,
+    optimizer,
+    use_fake_token=False,
+    join_method="concat",
+    join_location="early",
+):
     """Train the model for one epoch."""
     # set model to train mode
     model.train()
@@ -105,13 +114,17 @@ def train_loop(dataloader, image_model, xrd_model, model, optimizer, use_fake_to
         # set up fake tokens
         if use_fake_token:
             ft = [FAKE_TOKENS[label.item()] for label in labels]
-            for i in range(len(ft)):
+            for i, _ in enumerate(ft):
                 ft[i].extend([0] * (xrd_feature_dim - len(ft[i])))
 
             xrd_features = torch.tensor(ft).to(configs.device)
 
         # join features
-        features = join_func(sem_features, xrd_features)
+        features = None
+        if join_location == "early":
+            features = join_func(sem_features, xrd_features)
+        elif join_location == "late":
+            raise RuntimeError("Late join does not need training.")
 
         # compute prediction and loss
         logits = model(features)
@@ -138,9 +151,10 @@ def val_loop(
     image_model,
     xrd_model,
     model,
-    use_logit_masking=False,
+    use_label_masking=False,
     use_fake_token=False,
     join_method="concat",
+    join_location="early",
     missing_modality=None,
 ):
     """Validate the model for one epoch."""
@@ -185,20 +199,25 @@ def val_loop(
 
                 xrd_features = torch.tensor(ft).to(configs.device)
 
-            # concatenate features
-            features = join_func(sem_features, xrd_features)
+            if join_location == "early" and not use_label_masking:
+                # concatenate features
+                features = join_func(sem_features, xrd_features)
 
-            # compute prediction and loss
-            logits = model(features)
+                # compute prediction and loss
+                logits = model(features)
 
-            if use_logit_masking:
+            if join_location == "late" or use_label_masking:
                 # get class pred from XRD model
                 xrd_preds = torch.argmax(F.softmax(xrd_logits.squeeze(), dim=1), dim=1)
 
                 # make mask for image_logits with class pred
                 for i, (logit, pred) in enumerate(zip(sem_logits, xrd_preds)):
+                    # late fusion masking
                     mask = torch.tensor(LOGIT_MASKS[pred.item()]).to(configs.device)
-                    # mask = torch.tensor(LOGIT_MASKS_2[labels[i].item()]).to(configs.device)
+
+                    if use_label_masking:  # label masking baseline
+                        mask = torch.tensor(LOGIT_MASKS_2[labels[i].item()]).to(configs.device)
+
                     sem_logits[i] = logit * mask
 
                 logits = sem_logits
@@ -347,15 +366,17 @@ if __name__ == "__main__":
                 optimizer,
                 use_fake_token=configs.use_fake_token_baseline,
                 join_method=configs.join_method,
+                join_location=configs.join_location,
             )
             val_stats = val_loop(
                 val_dataloader,
                 image_model,
                 xrd_model,
                 model,
-                use_logit_masking=configs.use_logit_masking_baseline,
+                use_label_masking=configs.use_label_masking_baseline,
                 use_fake_token=configs.use_fake_token_baseline,
                 join_method=configs.join_method,
+                join_location=configs.join_location,
                 missing_modality=configs.missing_modality,
             )
             mlflow.log_metrics(train_stats | val_stats, step=epoch)
@@ -391,9 +412,10 @@ if __name__ == "__main__":
         image_model,
         xrd_model,
         model,
-        use_logit_masking=configs.use_logit_masking_baseline,
+        use_label_masking=configs.use_label_masking_baseline,
         use_fake_token=configs.use_fake_token_baseline,
         join_method=configs.join_method,
+        join_location=configs.join_location,
         missing_modality=configs.missing_modality,
     )
     print(f"test acc: {test_stats['val_acc']*100:.2f}%, test loss: {test_stats['val_loss']:.4f}")
