@@ -55,7 +55,7 @@ def parse_configs():
         type=str,
         default="early",
         help="joining location",
-        choices=["early", "late"],
+        choices=["super-early", "early", "late"],
     )
     parser.add_argument(
         "--missing-modality",

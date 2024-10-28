@@ -25,6 +25,7 @@ from utils import (
     combine_features,
     get_datasets,
     parse_configs,
+    repeat_and_reshape,
 )
 
 LOGIT_MASKS = {
@@ -83,6 +84,8 @@ def train_loop(
 ):
     """Train the model for one epoch."""
     # set model to train mode
+    if join_location == "super-early":
+        image_model.train()
     model.train()
 
     # set up loss and metrics
@@ -103,11 +106,17 @@ def train_loop(
             labels.to(configs.device),
         )
 
+        if join_location == "super-early":
+            # repeat and reshape XRDs to match image size
+            reshaped_xrds = repeat_and_reshape(xrds, sems.shape[3])
+            # concatenate reshaped XRDs to SEMs as a layer
+            sems = torch.cat((sems, reshaped_xrds), dim=2)
+
         # zero gradients from previous step
         optimizer.zero_grad()
 
         # get image representation and XRD token
-        _, sem_features = image_model(sems, return_feature=True)
+        sem_logits, sem_features = image_model(sems, return_feature=True)
         _, xrd_features = xrd_model(xrds, return_feature=True)
         xrd_features = xrd_features.squeeze()
 
@@ -121,13 +130,16 @@ def train_loop(
 
         # join features
         features = None
-        if join_location == "early":
+        if join_location == "super-early":
+            logits = sem_logits
+        elif join_location == "early":
             features = join_func(sem_features, xrd_features)
+            logits = model(features)
         elif join_location == "late":
             raise RuntimeError("Late join does not need training.")
 
         # compute prediction and loss
-        logits = model(features)
+
         loss = loss_fn(logits, labels)
         train_loss += loss.item()
 
@@ -159,6 +171,7 @@ def val_loop(
 ):
     """Validate the model for one epoch."""
     # set model to eval mode
+    image_model.eval()
     model.eval()
 
     # set up loss and metrics
@@ -186,6 +199,12 @@ def val_loop(
                 labels.to(configs.device),
             )
 
+            if join_location == "super-early":
+                # repeat and reshape XRDs to match image size
+                reshaped_xrds = repeat_and_reshape(xrds, sems.shape[3])
+                # concatenate reshaped XRDs to SEMs as a layer
+                sems = torch.cat((sems, reshaped_xrds), dim=2)
+
             # get image representation and XRD token
             sem_logits, sem_features = image_model(sems, return_feature=True)
             xrd_logits, xrd_features = xrd_model(xrds, return_feature=True)
@@ -198,6 +217,9 @@ def val_loop(
                     ft[i].extend([0] * (xrd_feature_dim - len(ft[i])))
 
                 xrd_features = torch.tensor(ft).to(configs.device)
+
+            if join_location == "super-early":
+                logits = sem_logits
 
             if join_location == "early" and not use_label_masking:
                 # concatenate features
@@ -289,13 +311,15 @@ if __name__ == "__main__":
                 image_model.heads.head = nn.Linear(image_model.heads.head.in_features, NUM_CLASSES)
 
     # load checkpoint
-    image_model.load_state_dict(torch.load(configs.checkpoint, map_location="cpu", weights_only=True))
+    if configs.checkpoint is not None:
+        image_model.load_state_dict(torch.load(configs.checkpoint, map_location="cpu", weights_only=True))
     image_model.to(configs.device)
 
     # freeze model
-    image_model.eval()
-    for param in image_model.parameters():
-        param.requires_grad = False
+    if configs.join_location != "super-early":  # super early fusion should not be frozen
+        image_model.eval()
+        for param in image_model.parameters():
+            param.requires_grad = False
 
     # get in and out feature shapes for XRD model
     match configs.join_method.lower():
@@ -310,7 +334,8 @@ if __name__ == "__main__":
     xrd_model = SimpleMLP(input_dim=4096, feature_dim=xrd_feature_dim, num_classes=3)
 
     # load checkpoint
-    xrd_model.load_state_dict(torch.load(configs.xrd_checkpoint, map_location="cpu", weights_only=True))
+    if configs.xrd_checkpoint is not None:
+        xrd_model.load_state_dict(torch.load(configs.xrd_checkpoint, map_location="cpu", weights_only=True))
     xrd_model.to(configs.device)
 
     # freeze model
@@ -327,12 +352,19 @@ if __name__ == "__main__":
     model.to(configs.device)
 
     # initialize optimizer and scheduler
+    if configs.join_location == "super-early":
+        optimizer = torch.optim.Adam(
+            image_model.parameters(),
+            lr=configs.lr,
+            weight_decay=configs.weight_decay,
+        )
 
-    optimizer = torch.optim.Adam(
-        model.parameters(),
-        lr=configs.lr,
-        weight_decay=configs.weight_decay,
-    )
+    else:
+        optimizer = torch.optim.Adam(
+            model.parameters(),
+            lr=configs.lr,
+            weight_decay=configs.weight_decay,
+        )
 
     scheduler = torch.optim.lr_scheduler.LambdaLR(
         optimizer,
@@ -388,9 +420,13 @@ if __name__ == "__main__":
             # save "best" model
             if val_stats["val_acc"] > best_metric:
                 best_metric = val_stats["val_acc"]
+                if configs.join_location == "super-early":
+                    torch.save(image_model.state_dict(), os.path.join(configs.root, "best_img.pth"))
                 torch.save(model.state_dict(), os.path.join(configs.root, "best.pth"))
 
             # save last model
+            if configs.join_location == "super-early":
+                torch.save(image_model.state_dict(), os.path.join(configs.root, "last_img.pth"))
             torch.save(model.state_dict(), os.path.join(configs.root, "last.pth"))
 
     print("Done!")
@@ -401,6 +437,12 @@ if __name__ == "__main__":
 
     # load best model
     if not configs.skip_train:
+        if configs.join_location == "super-early":
+            image_model.load_state_dict(
+                torch.load(
+                    os.path.join(configs.root, "best_img.pth"), map_location=torch.device("cpu"), weights_only=True
+                )
+            )
         model.load_state_dict(
             torch.load(os.path.join(configs.root, "best.pth"), map_location=torch.device("cpu"), weights_only=True)
         )

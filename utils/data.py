@@ -10,7 +10,6 @@ import torch
 from PIL import Image
 from torchvision.transforms import v2
 
-from .imagenet import ImageNetDataset
 from .xrd import (
     Normalize,
     PairedDataset,
@@ -288,7 +287,7 @@ def get_datasets(configs) -> dict:
                     torch.from_numpy,
                     Normalize(),
                     PeakHeightShiftTransform(shift_scale=0.15),
-                    RandomNoiseTransform(noise_level=0.002),
+                    RandomNoiseTransform(noise_level=0.005),
                 ]
             )
 
