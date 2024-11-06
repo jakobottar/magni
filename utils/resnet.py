@@ -3,6 +3,7 @@ from OpenOOD: https://arxiv.org/abs/2210.07242
 https://github.com/Jingkang50/OpenOOD/tree/main/openood/networks
 """
 
+from torch import nn
 from torchvision.models.resnet import BasicBlock, Bottleneck, ResNet
 
 
@@ -10,6 +11,16 @@ class ResNet50(ResNet):
     def __init__(self, block=Bottleneck, layers=[3, 4, 6, 3], num_classes=1000):
         super(ResNet50, self).__init__(block=block, layers=layers, num_classes=num_classes)
         self.feature_size = 2048
+
+        ## initialize weights
+        self.apply(self._initialize_weights)
+
+    def _initialize_weights(self, m):
+        if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
+            nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+        elif isinstance(m, nn.BatchNorm2d):
+            nn.init.constant_(m.weight, 1)
+            nn.init.constant_(m.bias, 0)
 
     def forward(self, x, return_feature=False, return_feature_list=False):
         feature1 = self.relu(self.bn1(self.conv1(x)))
@@ -78,6 +89,16 @@ class ResNet18(ResNet):
     def __init__(self, block=BasicBlock, layers=[2, 2, 2, 2], num_classes=1000):
         super(ResNet18, self).__init__(block=block, layers=layers, num_classes=num_classes)
         self.feature_size = 512
+
+        ## initialize weights
+        self.apply(self._initialize_weights)
+
+    def _initialize_weights(self, m):
+        if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
+            nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+        elif isinstance(m, nn.BatchNorm2d):
+            nn.init.constant_(m.weight, 1)
+            nn.init.constant_(m.bias, 0)
 
     def forward(self, x, return_feature=False, return_feature_list=False):
         feature1 = self.relu(self.bn1(self.conv1(x)))
