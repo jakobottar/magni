@@ -6,10 +6,12 @@ jakob johnson, 4/02/2024
 """
 import os
 
+import matplotlib.pyplot as plt
 import mlflow
 import numpy as np
 import torch
 import torch.nn.functional as F
+from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
 from torch import nn
 from torch.utils.data import DataLoader
 from torchmetrics.classification import MulticlassAccuracy
@@ -156,6 +158,7 @@ def val_loop(
     join_method="concat",
     join_location="early",
     missing_modality=None,
+    make_confusion_matrix=False,
 ):
     """Validate the model for one epoch."""
     # set model to eval mode
@@ -172,6 +175,8 @@ def val_loop(
         # validate on in-distribution data
         tbar_loader = tqdm(val_dataloader, desc="val", dynamic_ncols=True, disable=configs.no_tqdm)
 
+        if make_confusion_matrix:
+            pred_classes, correct_classes = [], []
         for xrds, sems, labels in tbar_loader:
 
             if missing_modality == "xrd":
@@ -225,8 +230,28 @@ def val_loop(
             val_loss += loss_fn(logits, labels).item()
             preds = torch.argmax(F.softmax(logits, dim=1), dim=1)
 
+            if make_confusion_matrix:
+                pred_classes.extend(preds.cpu().numpy())
+                correct_classes.extend(labels.cpu().numpy())
+
             # update metric
             accuracy.update(preds, labels)
+
+    if make_confusion_matrix:
+        # make confusion matrix
+        confusion = confusion_matrix(pred_classes, correct_classes, normalize="true")
+        cmdisplay = ConfusionMatrixDisplay(confusion, display_labels=range(val_dataloader.dataset.num_classes))
+
+        # plot confusion matrix
+        cmdisplay.confusion_matrix *= 100
+        cmdisplay.plot(xticks_rotation=90, colorbar=False, values_format=".1f")
+
+        fig = plt.gcf()
+        # fig.set_size_inches(9, 9)  # use for data-gathering
+        fig.set_size_inches(5, 5)  # use for print
+        fig.tight_layout()
+        fig.savefig(f"./{configs.root}/confusion.png", dpi=600)
+        plt.close()
 
     return {
         "val_acc": float(accuracy.compute()),
@@ -417,6 +442,7 @@ if __name__ == "__main__":
         join_method=configs.join_method,
         join_location=configs.join_location,
         missing_modality=configs.missing_modality,
+        make_confusion_matrix=True,
     )
     print(f"test acc: {test_stats['val_acc']*100:.2f}%, test loss: {test_stats['val_loss']:.4f}")
 
