@@ -363,6 +363,8 @@ class PairedDataset(torch.utils.data.Dataset):
 
         self.classes = FINALMATS if self.mode == "xrd" else ROUTES
 
+        self.num_classes = len(self.df["label"].unique())
+
     def __len__(self):
         return len(self.df)
 
