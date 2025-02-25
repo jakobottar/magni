@@ -362,7 +362,7 @@ class PairedDataset(torch.utils.data.Dataset):
             raise ValueError(f"Invalid mode: {self.mode}")
 
         self.classes = FINALMATS if self.mode == "xrd" else ROUTES
-
+        self.str_classes = [self.classes[i] for i in self.df["label"].unique()]
         self.num_classes = len(self.df["label"].unique())
 
     def __len__(self):
@@ -418,10 +418,26 @@ if __name__ == "__main__":
         ]
     )
 
+    xrd_transform2 = v2.Compose(
+        [
+            torch.from_numpy,
+            Normalize(),
+            PeakHeightShiftTransform(shift_scale=0.2),
+            RandomNoiseTransform(noise_level=0.002),
+        ]
+    )
+
     syn_dataset = PairedDataset(
         root="/usr/sci/scratch_nvme/jakobj/nfs/paired-xrd-sem-2",
         split="val",
         xrd_transform=xrd_transform,
+        synthetic_xrd=True,
+        mode="xrd",
+    )
+    syn_transf_dataset = PairedDataset(
+        root="/usr/sci/scratch_nvme/jakobj/nfs/paired-xrd-sem-2",
+        split="val",
+        xrd_transform=xrd_transform2,
         synthetic_xrd=True,
         mode="xrd",
     )
@@ -435,25 +451,46 @@ if __name__ == "__main__":
 
     for i in range(len(syn_dataset)):
         SAMPLE_IDX = i
-        if syn_dataset.df.iloc[SAMPLE_IDX]["finalmat"] != "UO3":
-            print(f"Skipping {syn_dataset.df.iloc[SAMPLE_IDX]['finalmat']}")
-            continue
-        else:
-            syn_sample = syn_dataset[SAMPLE_IDX][0].numpy()
-            real_sample = real_dataset[SAMPLE_IDX][0].numpy()
 
-            print(f"Synthetic XRD - {syn_dataset.df.iloc[SAMPLE_IDX]['xrd_file']}")
+        syn_sample = syn_dataset[SAMPLE_IDX][0].numpy()
+        syn_transf_sample = syn_transf_dataset[SAMPLE_IDX][0].numpy()
+        real_sample = real_dataset[SAMPLE_IDX][0].numpy()
 
-            plt.plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), syn_sample.squeeze())
-            plt.title(f"Synthetic XRD - {syn_dataset.df.iloc[SAMPLE_IDX]['route']}")
-            plt.savefig("peaks_syn.png")
-            plt.clf()
+        print(f"Synthetic XRD - {syn_dataset.df.iloc[SAMPLE_IDX]['xrd_file']}")
 
-            plt.plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), real_sample.squeeze())
-            plt.title(f"Real XRD - {real_dataset.df.iloc[SAMPLE_IDX]['route']}")
-            plt.savefig("peaks_real.png")
-            plt.clf()
+        # make a 1x3 column of plots
+        fig, axs = plt.subplots(3, 1, figsize=(5, 6))
 
-            # wait on key press
-            input("Press Enter to continue...")
-            plt.close()
+        fig.suptitle(f"XRD Peaks: Synthetic,Synthetic w/Transforms, and Real")
+        axs[0].plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), syn_sample.squeeze())
+        # axs[0].set_title("Synthetic XRD")
+        axs[0].set_ylabel("Intensity")
+
+        axs[1].plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), syn_transf_sample.squeeze())
+        # axs[1].set_title("Synthetic XRD w/Transforms")
+        axs[1].set_ylabel("Intensity")
+
+        axs[2].plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), real_sample.squeeze())
+        axs[2].set_xlabel("2θ")
+        axs[2].set_ylabel("Intensity")
+        # axs[2].set_title("Real XRD")
+
+        plt.savefig("peaks.png")
+
+        # plt.plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), syn_sample.squeeze())
+        # plt.title(f"Synthetic XRD - {syn_dataset.df.iloc[SAMPLE_IDX]['route']}")
+        # fg
+
+        # plt.plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), syn_transf_sample.squeeze())
+        # plt.title(f"Synthetic XRD w/Transforms - {syn_transf_sample.df.iloc[SAMPLE_IDX]['route']}")
+        # plt.savefig("peaks_syn_transf.png")
+        # plt.clf()
+
+        # plt.plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), real_sample.squeeze())
+        # plt.title(f"Real XRD - {real_dataset.df.iloc[SAMPLE_IDX]['route']}")
+        # plt.savefig("peaks_real.png")
+        # plt.clf()
+
+        # wait on key press
+        input("Press Enter to continue...")
+        plt.close()

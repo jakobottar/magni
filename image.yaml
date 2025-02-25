@@ -1,5 +1,5 @@
 arch: resnet50
-batch-size: 128
+batch-size: 256
 dataset: sem
 dataset-root: /usr/sci/scratch_nvme/jakobj/nfs/paired-xrd-sem-2
 device: cuda

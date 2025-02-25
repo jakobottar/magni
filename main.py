@@ -240,7 +240,7 @@ def val_loop(
     if make_confusion_matrix:
         # make confusion matrix
         confusion = confusion_matrix(pred_classes, correct_classes, normalize="true")
-        cmdisplay = ConfusionMatrixDisplay(confusion, display_labels=range(val_dataloader.dataset.num_classes))
+        cmdisplay = ConfusionMatrixDisplay(confusion, display_labels=val_dataloader.dataset.str_classes)
 
         # plot confusion matrix
         cmdisplay.confusion_matrix *= 100
@@ -248,7 +248,7 @@ def val_loop(
 
         fig = plt.gcf()
         # fig.set_size_inches(9, 9)  # use for data-gathering
-        fig.set_size_inches(5, 5)  # use for print
+        fig.set_size_inches(4.5, 4.5)  # use for print
         fig.tight_layout()
         fig.savefig(f"./{configs.root}/confusion.png", dpi=600)
         plt.close()
