@@ -218,7 +218,13 @@ def val_loop(
                     if use_label_masking:  # label masking baseline
                         mask = torch.tensor(LOGIT_MASKS_2[labels[i].item()]).to(configs.device)
 
-                    sem_logits[i] = logit * mask
+                    # mask the logit to -inf if mask is 0
+
+                    for mi, m in enumerate(mask):
+                        if m == 0:
+                            logit[mi] -= 1e9
+
+                    sem_logits[i] = logit
 
                 logits = sem_logits
 
