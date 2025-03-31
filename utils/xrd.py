@@ -459,20 +459,23 @@ if __name__ == "__main__":
         print(f"Synthetic XRD - {syn_dataset.df.iloc[SAMPLE_IDX]['xrd_file']}")
 
         # make a 1x3 column of plots
-        fig, axs = plt.subplots(3, 1, figsize=(5, 6))
+        fig, axs = plt.subplots(3, 1, figsize=(5, 6), dpi=300)
 
-        fig.suptitle(f"XRD Peaks: Synthetic,Synthetic w/Transforms, and Real")
-        axs[0].plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), syn_sample.squeeze())
+        fig.suptitle(f"XRD Peaks:\nSynthetic,Synthetic w/Transforms, and Real", fontsize=16)
+        axs[0].plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), syn_sample.squeeze(), color="#BE0000")
         # axs[0].set_title("Synthetic XRD")
-        axs[0].set_ylabel("Intensity")
+        axs[0].set_ylabel("Intensity", fontsize=12)
+        axs[0].set_yticks([0.0, 0.2, 0.4, 0.6])
 
-        axs[1].plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), syn_transf_sample.squeeze())
+        axs[1].plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), syn_transf_sample.squeeze(), color="#BE0000")
         # axs[1].set_title("Synthetic XRD w/Transforms")
-        axs[1].set_ylabel("Intensity")
+        axs[1].set_ylabel("Intensity", fontsize=12)
+        axs[1].set_yticks([0.0, 0.2, 0.4, 0.6])
 
-        axs[2].plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), real_sample.squeeze())
-        axs[2].set_xlabel("2θ")
-        axs[2].set_ylabel("Intensity")
+        axs[2].plot(np.linspace(X_MIN, X_MAX, NUM_POINTS), real_sample.squeeze(), color="#BE0000")
+        axs[2].set_xlabel("2θ", fontsize=12)
+        axs[2].set_ylabel("Intensity", fontsize=12)
+        axs[2].set_yticks([0.0, 0.2, 0.4, 0.6])
         # axs[2].set_title("Real XRD")
 
         plt.savefig("peaks.png")
