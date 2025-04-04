@@ -365,6 +365,8 @@ class PairedDataset(torch.utils.data.Dataset):
         self.str_classes = [self.classes[i] for i in self.df["label"].unique()]
         self.num_classes = len(self.df["label"].unique())
 
+        print(self.str_classes)
+
     def __len__(self):
         return len(self.df)
 
