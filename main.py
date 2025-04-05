@@ -279,9 +279,11 @@ if __name__ == "__main__":
     match configs.arch.lower():
         case "resnet18":
             image_model = ResNet18(num_classes=NUM_CLASSES)
+            # image_model.load_state_dict(models.ResNet18_Weights.IMAGENET1K_V1.get_state_dict())
             # model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
         case "resnet50":
             image_model = ResNet50(num_classes=NUM_CLASSES)
+            # image_model.load_state_dict(models.ResNet50_Weights.IMAGENET1K_V1.get_state_dict())
             # model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
         case "convnext":
             image_model = ConvNeXt()
