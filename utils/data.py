@@ -298,7 +298,7 @@ def get_datasets(configs) -> dict:
                 fold_num=configs.fold_num,
                 sem_transform=transforms["train"],
                 xrd_transform=xrd_transform,
-                synthetic_xrd=False,
+                synthetic_xrd=True,
                 mode="paired",
             )
             id_datasets["val"] = PairedDataset(
